@@ -87,7 +87,7 @@ struct NotebookFeedView: View {
         NavigationView {
             VStack {
                 // Search Bar
-                SearchBar(text: $viewModel.searchText)
+                FeedSearchBar(text: $viewModel.searchText)
                     .padding(.horizontal)
                 
                 // Segmented Control
@@ -137,7 +137,7 @@ struct NotebookFeedView: View {
     }
 }
 
-struct SearchBar: View {
+struct FeedSearchBar: View {
     @Binding var text: String
     
     var body: some View {
@@ -175,7 +175,7 @@ struct RecentNotebooksList: View {
         } else {
             List {
                 ForEach(notebooks) { notebook in
-                    NavigationLink(destination: NotebookDetailView(notebook: notebook)) {
+                    NavigationLink(destination: FeedNotebookDetailView(notebook: notebook)) {
                         FeedNotebookRow(notebook: notebook)
                     }
                 }
@@ -202,7 +202,7 @@ struct SharedNotebooksList: View {
         } else {
             List {
                 ForEach(notebooks) { notebook in
-                    NavigationLink(destination: NotebookDetailView(notebook: notebook)) {
+                    NavigationLink(destination: FeedNotebookDetailView(notebook: notebook)) {
                         FeedNotebookRow(notebook: notebook)
                     }
                 }
@@ -291,7 +291,7 @@ struct FeedNotebook: Identifiable {
     let isShared: Bool
 }
 
-struct NotebookDetailView: View {
+struct FeedNotebookDetailView: View {
     let notebook: FeedNotebook
     
     var body: some View {

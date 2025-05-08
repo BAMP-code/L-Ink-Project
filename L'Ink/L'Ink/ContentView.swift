@@ -38,21 +38,15 @@ struct MainTabView: View {
             
             NotebookSpaceView()
                 .tabItem {
-                    Label("Space", systemImage: "book")
+                    Label("Notebook Space", systemImage: "book")
                 }
                 .tag(1)
-            
-            NotebookLockerView()
-                .tabItem {
-                    Label("Locker", systemImage: "lock")
-                }
-                .tag(2)
             
             ProfileView()
                 .tabItem {
                     Label("Profile", systemImage: "person")
                 }
-                .tag(3)
+                .tag(2)
         }
         .accentColor(.blue)
         .opacity(hideTabBar ? 0 : 1)

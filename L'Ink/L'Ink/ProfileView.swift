@@ -4,70 +4,61 @@ struct ProfileView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @State private var showingEditProfile = false
     @State private var showingSettings = false
-    @State private var selectedTab = 0
+    @State private var headerImage: Image? = nil
+    @State private var showingImagePicker = false
     
-    // Sample data - replace with your actual notebook data
-    let notebooks = [
-        "Notebook 1", "Notebook 2", "Notebook 3",
-        "Notebook 4", "Notebook 5", "Notebook 6"
+    // Sample data
+    let savedNotebooks: [String: [String]] = [
+        "Travel": ["Japan 2023", "Italy Adventure"],
+        "Recipes": ["Vegan Delights", "Quick Meals"]
     ]
+    let collections: [String] = ["Favorites", "Work", "Personal"]
+    let likedNotebooks: [String] = ["Art Portfolio 2024", "Math Notes"]
+    let featuredScrapbooks: [String] = ["My Best Scrapbook"]
+    let badges: [String] = ["Creative Star", "Consistent Contributor", "Community Helper"]
+    let scrapbookStats = (
+        pages: 123,
+        favoriteStickerPack: "Cute Animals"
+    )
     
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 0) {
-                    // Profile Header
-                    HStack(spacing: 20) {
-                        // Profile Image
-                        Image(systemName: "person.circle.fill")
+                VStack(spacing: 20) {
+                    // Header Image Upload
+                    ZStack(alignment: .bottomTrailing) {
+                        (headerImage ?? Image("Logo"))
                             .resizable()
-                            .scaledToFit()
-                            .frame(width: 80, height: 80)
-                            .foregroundColor(.blue)
-                        
-                        // Stats
-                        HStack(spacing: 30) {
-                            VStack {
-                                Text("\(notebooks.count)")
-                                    .font(.headline)
-                                    .fontWeight(.bold)
-                                Text("Notebooks")
-                                    .font(.caption)
-                            }
-                            
-                            VStack {
-                                Text("45")
-                                    .font(.headline)
-                                    .fontWeight(.bold)
-                                Text("Notes")
-                                    .font(.caption)
-                            }
-                            
-                            VStack {
-                                Text("8")
-                                    .font(.headline)
-                                    .fontWeight(.bold)
-                                Text("Shared")
-                                    .font(.caption)
-                            }
+                            .scaledToFill()
+                            .frame(height: 160)
+                            .clipped()
+                            .cornerRadius(16)
+                            .padding(.horizontal)
+                        Button(action: { showingImagePicker = true }) {
+                            Image(systemName: "camera.fill")
+                                .padding(8)
+                                .background(Color.white.opacity(0.8))
+                                .clipShape(Circle())
+                                .padding([.trailing, .bottom], 24)
                         }
                     }
-                    .padding(.horizontal)
-                    .padding(.top)
-                    
-                    // Bio Section
+                    .sheet(isPresented: $showingImagePicker) {
+                        // Placeholder for image picker
+                        Text("Image Picker Here")
+                            .font(.headline)
+                    }
+
+                    // Profile Info
                     VStack(alignment: .leading, spacing: 4) {
                         Text(authViewModel.currentUser?.username ?? "Username")
-                            .font(.headline)
+                            .font(.title2)
                             .fontWeight(.bold)
-                        
                         Text("Bio goes here")
                             .font(.subheadline)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
-                    .padding(.top, 8)
-                    
+
                     // Action Buttons
                     HStack(spacing: 10) {
                         Button(action: { showingEditProfile = true }) {
@@ -78,7 +69,6 @@ struct ProfileView: View {
                                 .background(Color.gray.opacity(0.1))
                                 .cornerRadius(8)
                         }
-                        
                         Button(action: { showingSettings = true }) {
                             Image(systemName: "gear")
                                 .frame(width: 30)
@@ -88,46 +78,111 @@ struct ProfileView: View {
                         }
                     }
                     .padding(.horizontal)
-                    .padding(.top, 8)
-                    
-                    // Tabs
-                    HStack {
-                        Spacer()
-                        Button(action: { selectedTab = 0 }) {
-                            Image(systemName: "square.grid.2x2")
-                                .foregroundColor(selectedTab == 0 ? .primary : .gray)
+
+                    // Scrapbook Stats
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Scrapbook Stats")
+                            .font(.headline)
+                        HStack {
+                            Text("Pages Created: \(scrapbookStats.pages)")
+                            Spacer()
+                            Text("Fav. Stickers: \(scrapbookStats.favoriteStickerPack)")
                         }
-                        Spacer()
-                        Button(action: { selectedTab = 1 }) {
-                            Image(systemName: "square.and.pencil")
-                                .foregroundColor(selectedTab == 1 ? .primary : .gray)
-                        }
-                        Spacer()
-                        Button(action: { selectedTab = 2 }) {
-                            Image(systemName: "person.2")
-                                .foregroundColor(selectedTab == 2 ? .primary : .gray)
-                        }
-                        Spacer()
+                        .font(.subheadline)
                     }
-                    .padding(.vertical, 8)
-                    .overlay(
-                        Rectangle()
-                            .frame(height: 1)
-                            .foregroundColor(.gray.opacity(0.2)),
-                        alignment: .top
-                    )
-                    
-                    // Notebooks Grid
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 2) {
-                        ForEach(notebooks, id: \.self) { notebook in
-                            NotebookGridItem(notebook: notebook)
+                    .padding(.horizontal)
+
+                    // Featured Scrapbooks
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Featured Scrapbooks")
+                            .font(.headline)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack {
+                                ForEach(featuredScrapbooks, id: \.self) { scrapbook in
+                                    VStack {
+                                        Image("Logo")
+                                            .resizable()
+                                            .frame(width: 100, height: 100)
+                                            .cornerRadius(12)
+                                        Text(scrapbook)
+                                            .font(.caption)
+                                    }
+                                    .padding(4)
+                                }
+                            }
                         }
                     }
+                    .padding(.horizontal)
+
+                    // Saved Notebooks by Tag/Collection
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Saved Notebooks")
+                            .font(.headline)
+                        ForEach(savedNotebooks.keys.sorted(), id: \.self) { tag in
+                            VStack(alignment: .leading) {
+                                Text(tag)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack {
+                                        ForEach(savedNotebooks[tag]!, id: \.self) { notebook in
+                                            NotebookCardView(title: notebook)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // Collections
+                        Text("Collections")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack {
+                                ForEach(collections, id: \.self) { collection in
+                                    NotebookCardView(title: collection)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+
+                    // Liked Notebooks
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Liked Notebooks")
+                            .font(.headline)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack {
+                                ForEach(likedNotebooks, id: \.self) { notebook in
+                                    NotebookCardView(title: notebook)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+
+                    // Badges/Achievements
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Badges & Achievements")
+                            .font(.headline)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack {
+                                ForEach(badges, id: \.self) { badge in
+                                    VStack {
+                                        Image(systemName: "star.fill")
+                                            .foregroundColor(.yellow)
+                                            .frame(width: 40, height: 40)
+                                        Text(badge)
+                                            .font(.caption)
+                                            .multilineTextAlignment(.center)
+                                    }
+                                    .padding(4)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
                 }
+                .padding(.vertical)
             }
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
@@ -141,20 +196,22 @@ struct ProfileView: View {
     }
 }
 
-struct NotebookGridItem: View {
-    let notebook: String
-    
+struct NotebookCardView: View {
+    let title: String
     var body: some View {
         VStack {
-            Image(systemName: "book.closed.fill")
+            Image("Logo")
                 .resizable()
-                .scaledToFit()
-                .frame(height: 100)
-                .foregroundColor(.blue)
-                .padding()
-                .background(Color.gray.opacity(0.1))
+                .frame(width: 60, height: 60)
+                .cornerRadius(8)
+            Text(title)
+                .font(.caption)
+                .multilineTextAlignment(.center)
         }
-        .aspectRatio(1, contentMode: .fit)
+        .frame(width: 80)
+        .padding(4)
+        .background(Color.gray.opacity(0.1))
+        .cornerRadius(10)
     }
 }
 

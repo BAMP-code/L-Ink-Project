@@ -22,12 +22,13 @@ struct NotebookLockerView: View {
     
     var body: some View {
         NavigationView {
-            VStack {
-                // Search Bar
+            VStack(spacing: 0) {
                 SearchBar(text: $searchText)
-                    .padding()
+                    .padding(.horizontal)
+                    .padding(.top, 8)
                 
                 if filteredNotebooks.isEmpty {
+                    Spacer()
                     VStack(spacing: 20) {
                         Image(systemName: "lock.shield")
                             .font(.system(size: 60))
@@ -40,6 +41,7 @@ struct NotebookLockerView: View {
                             .foregroundColor(.gray)
                     }
                     .padding()
+                    Spacer()
                 } else {
                     List {
                         ForEach(filteredNotebooks) { notebook in

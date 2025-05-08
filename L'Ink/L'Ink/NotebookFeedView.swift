@@ -157,7 +157,7 @@ struct NotebookFeedView: View {
             .refreshable {
                 await refreshData()
             }
-            .navigationTitle("Public Notebooks")
+            .navigationTitle("Explore")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -222,8 +222,10 @@ struct PublicNotebookView: View {
             // Notebook Cover
             Image(notebook.coverImage)
                 .resizable()
-                .scaledToFit()
+                .aspectRatio(4/5, contentMode: .fit)
                 .frame(maxWidth: .infinity)
+                .cornerRadius(12)
+                .padding(.horizontal)
             
             // Action Buttons
             HStack(spacing: 16) {
@@ -280,6 +282,12 @@ struct PublicNotebookView: View {
             }
             .padding(.horizontal)
             
+            // Timestamp
+            Text(notebook.timestamp, formatter: DateFormatter.feedDate)
+                .font(.caption)
+                .foregroundColor(.gray)
+                .padding(.horizontal)
+            
             // Comments Preview
             if !notebook.comments.isEmpty {
                 Button(action: { showingComments = true }) {
@@ -289,12 +297,6 @@ struct PublicNotebookView: View {
                 }
                 .padding(.horizontal)
             }
-            
-            // Timestamp
-            Text(notebook.timestamp, style: .relative)
-                .font(.caption)
-                .foregroundColor(.gray)
-                .padding(.horizontal)
         }
         .sheet(isPresented: $showingComments) {
             NotebookCommentsView(notebook: notebook, viewModel: viewModel)
@@ -354,4 +356,13 @@ struct NotebookCommentsView: View {
             }
         }
     }
+}
+
+// Add a static date formatter for feed dates
+extension DateFormatter {
+    static let feedDate: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy"
+        return formatter
+    }()
 } 

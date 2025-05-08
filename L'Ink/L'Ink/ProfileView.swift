@@ -6,6 +6,8 @@ struct ProfileView: View {
     @State private var showingSettings = false
     @State private var headerImage: Image? = nil
     @State private var showingImagePicker = false
+    @State private var profileImage: Image? = nil
+    @State private var showingProfileImagePicker = false
     
     // Sample data
     let savedNotebooks: [String: [String]] = [
@@ -25,8 +27,9 @@ struct ProfileView: View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 20) {
-                    // Header Image Upload
-                    ZStack(alignment: .bottomTrailing) {
+                    // Header and profile image section
+                    ZStack(alignment: .bottomLeading) {
+                        // Header image
                         (headerImage ?? Image("Logo"))
                             .resizable()
                             .scaledToFill()
@@ -34,21 +37,53 @@ struct ProfileView: View {
                             .clipped()
                             .cornerRadius(16)
                             .padding(.horizontal)
-                        Button(action: { showingImagePicker = true }) {
-                            Image(systemName: "camera.fill")
-                                .padding(8)
-                                .background(Color.white.opacity(0.8))
+                            .overlay(
+                                HStack {
+                                    Spacer()
+                                    VStack {
+                                        Spacer()
+                                        Button(action: { showingImagePicker = true }) {
+                                            Image(systemName: "camera.fill")
+                                                .padding(8)
+                                                .background(Color.white.opacity(0.8))
+                                                .clipShape(Circle())
+                                                .shadow(radius: 2)
+                                        }
+                                        .padding(.trailing, 32)
+                                        .padding(.bottom, 16)
+                                    }
+                                }
+                            )
+                        // Profile image (overlapping bottom left)
+                        ZStack(alignment: .bottomTrailing) {
+                            (profileImage ?? Image(systemName: "person.crop.circle.fill"))
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 100, height: 100)
                                 .clipShape(Circle())
-                                .padding([.trailing, .bottom], 24)
+                                .overlay(Circle().stroke(Color.white, lineWidth: 4))
+                                .shadow(radius: 4)
+                                .offset(x: 32, y: 50)
+                            Button(action: { showingProfileImagePicker = true }) {
+                                Image(systemName: "camera.fill")
+                                    .padding(6)
+                                    .background(Color.white.opacity(0.8))
+                                    .clipShape(Circle())
+                                    .offset(x: 32, y: 54)
+                            }
                         }
                     }
                     .sheet(isPresented: $showingImagePicker) {
-                        // Placeholder for image picker
-                        Text("Image Picker Here")
-                            .font(.headline)
+                        Text("Image Picker Here").font(.headline)
+                    }
+                    .sheet(isPresented: $showingProfileImagePicker) {
+                        Text("Profile Image Picker Here").font(.headline)
                     }
 
-                    // Profile Info
+                    // Add vertical spacing below the header/profile image
+                    Spacer().frame(height: 60)
+
+                    // Profile Info and rest of the content
                     VStack(alignment: .leading, spacing: 4) {
                         Text(authViewModel.currentUser?.username ?? "Username")
                             .font(.title2)

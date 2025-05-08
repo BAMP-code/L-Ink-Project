@@ -21,6 +21,7 @@ struct PublicNotebook: Identifiable {
     let pageCount: Int
     var isLiked: Bool = false
     var isSaved: Bool = false
+    let prompts: [String]
 }
 
 struct NotebookComment: Identifiable {
@@ -53,7 +54,12 @@ class FeedViewModel: ObservableObject {
                     NotebookComment(username: "alex_dev", text: "The structure is really well thought out.", timestamp: Date().addingTimeInterval(-7200))
                 ],
                 timestamp: Date().addingTimeInterval(-3600),
-                pageCount: 15
+                pageCount: 15,
+                prompts: [
+                    "What did you like most about this notebook?",
+                    "How would you use this in your own work?",
+                    "What would you add or change?"
+                ]
             ),
             PublicNotebook(
                 title: "Study Notes: Advanced Mathematics",
@@ -67,7 +73,11 @@ class FeedViewModel: ObservableObject {
                     NotebookComment(username: "john_doe", text: "These notes are incredibly helpful! Thank you for sharing.", timestamp: Date().addingTimeInterval(-1800))
                 ],
                 timestamp: Date().addingTimeInterval(-7200),
-                pageCount: 45
+                pageCount: 45,
+                prompts: [
+                    "Which topic did you find most challenging?",
+                    "What would you like to see explained in more detail?"
+                ]
             ),
             PublicNotebook(
                 title: "Travel Journal: Japan",
@@ -82,7 +92,8 @@ class FeedViewModel: ObservableObject {
                     NotebookComment(username: "sarah_wilson", text: "Beautiful photos!", timestamp: Date().addingTimeInterval(-6000))
                 ],
                 timestamp: Date().addingTimeInterval(-10800),
-                pageCount: 30
+                pageCount: 30,
+                prompts: []
             ),
             PublicNotebook(
                 title: "Recipe Book: Vegan Delights",
@@ -96,7 +107,8 @@ class FeedViewModel: ObservableObject {
                     NotebookComment(username: "jane_smith", text: "Trying the lasagna tonight!", timestamp: Date().addingTimeInterval(-8000))
                 ],
                 timestamp: Date().addingTimeInterval(-14400),
-                pageCount: 22
+                pageCount: 22,
+                prompts: []
             ),
             PublicNotebook(
                 title: "Art Portfolio 2024",
@@ -110,7 +122,8 @@ class FeedViewModel: ObservableObject {
                     NotebookComment(username: "alex_dev", text: "Your style is so unique!", timestamp: Date().addingTimeInterval(-10000))
                 ],
                 timestamp: Date().addingTimeInterval(-20000),
-                pageCount: 40
+                pageCount: 40,
+                prompts: []
             )
         ]
     }
@@ -327,11 +340,28 @@ struct NotebookCommentsView: View {
                         .padding(.vertical, 4)
                     }
                 }
-                
+                // Prompts
+                if !notebook.prompts.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack {
+                            ForEach(notebook.prompts, id: \.self) { prompt in
+                                Button(action: { newComment = prompt }) {
+                                    Text(prompt)
+                                        .font(.caption)
+                                        .padding(8)
+                                        .background(Color.blue.opacity(0.1))
+                                        .foregroundColor(.blue)
+                                        .cornerRadius(8)
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, 4)
+                    }
+                }
                 HStack {
                     TextField("Add a comment...", text: $newComment)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
-                    
                     Button(action: {
                         if !newComment.isEmpty {
                             viewModel.addComment(newComment, to: notebook)

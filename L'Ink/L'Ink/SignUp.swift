@@ -92,20 +92,18 @@ struct SignUpView: View {
     }
     
     private func signUp() {
-        guard !email.isEmpty, !password.isEmpty, !username.isEmpty else {
-            alertMessage = "Please fill in all fields"
-            showingAlert = true
-            return
-        }
-        
-        isSigningUp = true
-        
-        // Call the authViewModel's signUp function
-        authViewModel.signUp(email: email, password: password, username: username)
-        
-        // Reset the form after a short delay to show the loading state
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            isSigningUp = false
+        Task {
+            do {
+                try await authViewModel.signUp(
+                    username: username,
+                    email: email,
+                    password: password
+                )
+                isSigningUp = false
+            } catch {
+                alertMessage = error.localizedDescription
+                showingAlert = true
+            }
         }
     }
 }

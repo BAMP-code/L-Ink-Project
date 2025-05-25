@@ -7,36 +7,87 @@
 
 import SwiftUI
 import Combine
+import Foundation
+import FirebaseAuth
+import FirebaseFirestore
 
 class AuthViewModel: ObservableObject {
     @Published var isAuthenticated = false
-    @Published var currentUser: User?
+    @Published var currentUser: AppUser?
     @Published var errorMessage: String?
     
     private var cancellables = Set<AnyCancellable>()
+    private let db = Firestore.firestore()
     
     init() {
-        // Check if user is already authenticated
-        // This would typically check local storage or keychain
-        checkAuthStatus()
+        // For testing, create a default user with ID "bamp"
+        Task {
+            await createDefaultUser()
+        }
     }
     
-    func signUp(email: String, password: String, username: String) {
-        // TODO: Implement actual sign up logic with your backend
-        // This is a placeholder implementation
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            self.currentUser = User(id: UUID().uuidString, email: email, username: username)
-            self.isAuthenticated = true
+    private func createDefaultUser() async {
+        do {
+            let userDoc = try await db.collection("users").document("bamp").getDocument()
+            
+            if !userDoc.exists {
+                // Create default user
+                let defaultUser = AppUser(
+                    id: "bamp",
+                    username: "Bamp",
+                    email: "bamp@example.com"
+                )
+                
+                try await db.collection("users").document("bamp").setData(defaultUser.dictionary)
+                await MainActor.run {
+                    self.currentUser = defaultUser
+                }
+            } else {
+                // Load existing user
+                if let user = AppUser.fromDictionary(userDoc.data() ?? [:]) {
+                    await MainActor.run {
+                        self.currentUser = user
+                    }
+                }
+            }
+        } catch {
+            print("Error creating/loading default user: \(error)")
+        }
+    }
+    
+    func updateUser(_ user: AppUser) async throws {
+        try await db.collection("users").document(user.id).setData(user.dictionary)
+        await MainActor.run {
+            self.currentUser = user
+        }
+    }
+    
+    func signUp(username: String, email: String, password: String) async throws {
+        let user = AppUser(
+            id: UUID().uuidString,
+            username: username,
+            email: email,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        
+        try await db.collection("users").document(user.id).setData(user.dictionary)
+        await MainActor.run {
+            self.currentUser = user
         }
     }
     
     func signIn(email: String, password: String) {
-        // TODO: Implement actual sign in logic with your backend
-        // This is a placeholder implementation
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            self.currentUser = User(id: UUID().uuidString, email: email, username: "User")
-            self.isAuthenticated = true
-        }
+        // For testing, create a default user
+        let user = AppUser(
+            id: "bamp",
+            username: "bamp",
+            email: email,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        self.currentUser = user
+        self.isAuthenticated = true
     }
     
     func signOut() {

@@ -1,5 +1,6 @@
 import SwiftUI
 import FirebaseCore
+import FirebaseStorage
 
 class AppDelegate: NSObject, UIApplicationDelegate {
   func application(_ application: UIApplication,

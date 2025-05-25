@@ -193,6 +193,9 @@ struct NotebookDetailView: View {
                 )
             }
         }
+        .onChange(of: selectedPageIndex) { _, newValue in
+            saveLastViewedPage()
+        }
     }
     
     private func saveLastViewedPage() {

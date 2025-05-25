@@ -107,7 +107,7 @@ struct SignInView: View {
         authViewModel.signIn(email: email, password: password)
         
         // Reset the form after a short delay to show the loading state
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             isSigningIn = false
         }
     }

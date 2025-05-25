@@ -1,13 +1,15 @@
 import SwiftUI
+import FirebaseStorage
 
 struct ProfileView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @State private var showingEditProfile = false
     @State private var showingSettings = false
-    @State private var headerImage: Image? = nil
+    @State private var headerImage: UIImage?
     @State private var showingImagePicker = false
-    @State private var profileImage: Image? = nil
+    @State private var profileImage: UIImage?
     @State private var showingProfileImagePicker = false
+    @State private var isUploading = false
     
     // Sample data
     let savedNotebooks: [String: [String]] = [
@@ -30,40 +32,92 @@ struct ProfileView: View {
                     // Header and profile image section
                     ZStack(alignment: .bottomLeading) {
                         // Header image
-                        (headerImage ?? Image("Logo"))
-                            .resizable()
-                            .scaledToFill()
+                        if let headerImage = headerImage {
+                            Image(uiImage: headerImage)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(height: 160)
+                                .clipped()
+                                .cornerRadius(16)
+                                .padding(.horizontal)
+                        } else if let headerURL = authViewModel.currentUser?.headerImageURL {
+                            AsyncImage(url: URL(string: headerURL)) { image in
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                            } placeholder: {
+                                Image("Logo")
+                                    .resizable()
+                                    .scaledToFill()
+                            }
                             .frame(height: 160)
                             .clipped()
                             .cornerRadius(16)
                             .padding(.horizontal)
-                            .overlay(
-                                HStack {
-                                    Spacer()
-                                    VStack {
-                                        Spacer()
-                                        Button(action: { showingImagePicker = true }) {
-                                            Image(systemName: "camera.fill")
-                                                .padding(8)
-                                                .background(Color.white.opacity(0.8))
-                                                .clipShape(Circle())
-                                                .shadow(radius: 2)
-                                        }
-                                        .padding(.trailing, 32)
-                                        .padding(.bottom, 16)
-                                    }
-                                }
-                            )
-                        // Profile image (overlapping bottom left)
-                        ZStack(alignment: .bottomTrailing) {
-                            (profileImage ?? Image(systemName: "person.crop.circle.fill"))
+                        } else {
+                            Image("Logo")
                                 .resizable()
                                 .scaledToFill()
+                                .frame(height: 160)
+                                .clipped()
+                                .cornerRadius(16)
+                                .padding(.horizontal)
+                        }
+                        
+                        // Header image picker button
+                        HStack {
+                            Spacer()
+                            VStack {
+                                Spacer()
+                                Button(action: { showingImagePicker = true }) {
+                                    Image(systemName: "camera.fill")
+                                        .padding(8)
+                                        .background(Color.white.opacity(0.8))
+                                        .clipShape(Circle())
+                                        .shadow(radius: 2)
+                                }
+                                .padding(.trailing, 32)
+                                .padding(.bottom, 16)
+                            }
+                        }
+                        
+                        // Profile image (overlapping bottom left)
+                        ZStack(alignment: .bottomTrailing) {
+                            if let profileImage = profileImage {
+                                Image(uiImage: profileImage)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 100, height: 100)
+                                    .clipShape(Circle())
+                                    .overlay(Circle().stroke(Color.white, lineWidth: 4))
+                                    .shadow(radius: 4)
+                                    .offset(x: 32, y: 50)
+                            } else if let profileURL = authViewModel.currentUser?.profileImageURL {
+                                AsyncImage(url: URL(string: profileURL)) { image in
+                                    image
+                                        .resizable()
+                                        .scaledToFill()
+                                } placeholder: {
+                                    Image(systemName: "person.crop.circle.fill")
+                                        .resizable()
+                                        .scaledToFill()
+                                }
                                 .frame(width: 100, height: 100)
                                 .clipShape(Circle())
                                 .overlay(Circle().stroke(Color.white, lineWidth: 4))
                                 .shadow(radius: 4)
                                 .offset(x: 32, y: 50)
+                            } else {
+                                Image(systemName: "person.crop.circle.fill")
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 100, height: 100)
+                                    .clipShape(Circle())
+                                    .overlay(Circle().stroke(Color.white, lineWidth: 4))
+                                    .shadow(radius: 4)
+                                    .offset(x: 32, y: 50)
+                            }
+                            
                             Button(action: { showingProfileImagePicker = true }) {
                                 Image(systemName: "camera.fill")
                                     .padding(6)
@@ -74,10 +128,20 @@ struct ProfileView: View {
                         }
                     }
                     .sheet(isPresented: $showingImagePicker) {
-                        Text("Image Picker Here").font(.headline)
+                        ImagePicker(image: $headerImage)
+                            .onChange(of: headerImage) { newImage in
+                                if let image = newImage {
+                                    uploadHeaderImage(image)
+                                }
+                            }
                     }
                     .sheet(isPresented: $showingProfileImagePicker) {
-                        Text("Profile Image Picker Here").font(.headline)
+                        ImagePicker(image: $profileImage)
+                            .onChange(of: profileImage) { newImage in
+                                if let image = newImage {
+                                    uploadProfileImage(image)
+                                }
+                            }
                     }
 
                     // Add vertical spacing below the header/profile image
@@ -226,6 +290,62 @@ struct ProfileView: View {
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
+            }
+            .overlay {
+                if isUploading {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color.black.opacity(0.2))
+                }
+            }
+        }
+    }
+    
+    private func uploadHeaderImage(_ image: UIImage) {
+        guard let userId = authViewModel.currentUser?.id else { return }
+        isUploading = true
+        
+        Task {
+            do {
+                let path = "users/\(userId)/header.jpg"
+                let imageURL = try await StorageService.shared.uploadImage(image, path: path)
+                
+                // Update user profile in Firestore
+                var updatedUser = authViewModel.currentUser
+                updatedUser?.headerImageURL = imageURL
+                if let user = updatedUser {
+                    try await authViewModel.updateUser(user)
+                }
+                
+                isUploading = false
+            } catch {
+                print("Error uploading header image: \(error)")
+                isUploading = false
+            }
+        }
+    }
+    
+    private func uploadProfileImage(_ image: UIImage) {
+        guard let userId = authViewModel.currentUser?.id else { return }
+        isUploading = true
+        
+        Task {
+            do {
+                let path = "users/\(userId)/profile.jpg"
+                let imageURL = try await StorageService.shared.uploadImage(image, path: path)
+                
+                // Update user profile in Firestore
+                var updatedUser = authViewModel.currentUser
+                updatedUser?.profileImageURL = imageURL
+                if let user = updatedUser {
+                    try await authViewModel.updateUser(user)
+                }
+                
+                isUploading = false
+            } catch {
+                print("Error uploading profile image: \(error)")
+                isUploading = false
             }
         }
     }

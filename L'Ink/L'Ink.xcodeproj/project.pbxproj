@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		B6B4F80F2DD985870041A67A /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = B6B4F80E2DD985870041A67A /* FirebaseAuth */; };
 		B6B4F8112DD985870041A67A /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = B6B4F8102DD985870041A67A /* FirebaseFirestore */; };
+		B6B4F82A2DE2FD6D0041A67A /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = B6B4F8292DE2FD6D0041A67A /* FirebaseStorage */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -59,6 +60,7 @@
 			files = (
 				B6B4F80F2DD985870041A67A /* FirebaseAuth in Frameworks */,
 				B6B4F8112DD985870041A67A /* FirebaseFirestore in Frameworks */,
+				B6B4F82A2DE2FD6D0041A67A /* FirebaseStorage in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -121,6 +123,7 @@
 			packageProductDependencies = (
 				B6B4F80E2DD985870041A67A /* FirebaseAuth */,
 				B6B4F8102DD985870041A67A /* FirebaseFirestore */,
+				B6B4F8292DE2FD6D0041A67A /* FirebaseStorage */,
 			);
 			productName = "L'Ink";
 			productReference = 61944E2F2DC069C100027300 /* L'Ink.app */;
@@ -586,6 +589,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = B6B4F80D2DD985870041A67A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseFirestore;
+		};
+		B6B4F8292DE2FD6D0041A67A /* FirebaseStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = FirebaseStorage;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

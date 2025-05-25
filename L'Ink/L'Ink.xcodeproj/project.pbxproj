@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		B6B4F80F2DD985870041A67A /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = B6B4F80E2DD985870041A67A /* FirebaseAuth */; };
+		B6B4F8112DD985870041A67A /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = B6B4F8102DD985870041A67A /* FirebaseFirestore */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		61944E402DC069C200027300 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +57,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B6B4F80F2DD985870041A67A /* FirebaseAuth in Frameworks */,
+				B6B4F8112DD985870041A67A /* FirebaseFirestore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +119,8 @@
 			);
 			name = "L'Ink";
 			packageProductDependencies = (
+				B6B4F80E2DD985870041A67A /* FirebaseAuth */,
+				B6B4F8102DD985870041A67A /* FirebaseFirestore */,
 			);
 			productName = "L'Ink";
 			productReference = 61944E2F2DC069C100027300 /* L'Ink.app */;
@@ -195,6 +204,9 @@
 			);
 			mainGroup = 61944E262DC069C100027300;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B6B4F80D2DD985870041A67A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 61944E302DC069C100027300 /* Products */;
 			projectDirPath = "";
@@ -552,6 +564,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		B6B4F80D2DD985870041A67A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.12.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B6B4F80E2DD985870041A67A /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B6B4F80D2DD985870041A67A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		B6B4F8102DD985870041A67A /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B6B4F80D2DD985870041A67A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 61944E272DC069C100027300 /* Project object */;
 }

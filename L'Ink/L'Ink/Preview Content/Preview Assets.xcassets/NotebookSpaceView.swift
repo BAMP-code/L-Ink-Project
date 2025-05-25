@@ -1,4 +1,5 @@
 import SwiftUI
+import FirebaseFirestore
 
 struct NotebookSpaceView: View {
     @State private var notebooks: [Notebook] = []
@@ -71,15 +72,18 @@ struct NotebookCard: View {
                 Image(systemName: "book.closed.fill")
                     .foregroundColor(.blue)
                 Spacer()
-                Text("\(notebook.pageCount) pages")
-                    .font(.caption)
-                    .foregroundColor(.gray)
+                if let description = notebook.description {
+                    Text(description)
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                }
             }
             
             Text(notebook.title)
                 .font(.headline)
             
-            Text(notebook.lastModified, style: .date)
+            Text(notebook.updatedAt, style: .date)
                 .font(.caption)
                 .foregroundColor(.gray)
         }
@@ -119,6 +123,7 @@ struct NewNotebookView: View {
     @Environment(\.presentationMode) var presentationMode
     @State private var title = ""
     @State private var description = ""
+    @State private var isPublic = false
     
     var body: some View {
         NavigationView {
@@ -129,7 +134,7 @@ struct NewNotebookView: View {
                 }
                 
                 Section(header: Text("Settings")) {
-                    Toggle("Private Notebook", isOn: .constant(false))
+                    Toggle("Public Notebook", isOn: $isPublic)
                 }
             }
             .navigationTitle("New Notebook")
@@ -145,11 +150,4 @@ struct NewNotebookView: View {
             )
         }
     }
-}
-
-struct Notebook: Identifiable {
-    let id = UUID()
-    let title: String
-    let pageCount: Int
-    let lastModified: Date
 } 

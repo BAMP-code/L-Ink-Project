@@ -1,24 +1,26 @@
-//
-//  NotebookSpaceView.swift
-//  L'Ink
-//
-//  Created by Daniela on 4/28/25.
-//
-
 import SwiftUI
+import FirebaseFirestore
 
 struct NotebookSpaceView: View {
-    @State private var notebooks: [Notebook] = [
-        Notebook(title: "My First Notebook", pageCount: 12, lastModified: Date(), coverColor: .blue, icon: "book.closed.fill"),
-        Notebook(title: "Project Ideas", pageCount: 8, lastModified: Date().addingTimeInterval(-86400), coverColor: .green, icon: "book.fill"),
-        Notebook(title: "Daily Journal", pageCount: 30, lastModified: Date().addingTimeInterval(-172800), coverColor: .purple, icon: "text.book.closed.fill")
-    ]
+    @StateObject private var viewModel = NotebookViewModel()
     @State private var showingNewNotebook = false
     @State private var searchText = ""
-    @State private var selectedNotebook: Notebook?
-    @State private var currentPage = 0
+    @State private var selectedSection = 0
+    @State private var scrollOffset: CGFloat = 0
     
     var filteredNotebooks: [Notebook] {
+        let notebooks: [Notebook]
+        switch selectedSection {
+        case 0: // My Notebooks
+            notebooks = viewModel.notebooks.filter { $0.ownerId == viewModel.testUserId }
+        case 1: // Shared Notebooks
+            notebooks = viewModel.notebooks.filter { $0.isPublic }
+        case 2: // Pinned Notebooks
+            notebooks = viewModel.notebooks.filter { $0.isPinned }
+        default:
+            notebooks = []
+        }
+        
         if searchText.isEmpty {
             return notebooks
         } else {
@@ -28,52 +30,86 @@ struct NotebookSpaceView: View {
     
     var body: some View {
         NavigationView {
-            VStack {
-                // Search Bar
-                SearchBar(text: $searchText)
-                    .padding()
-                
-                if filteredNotebooks.isEmpty {
-                    VStack(spacing: 20) {
-                        Image(systemName: "book.closed")
-                            .font(.system(size: 60))
-                            .foregroundColor(.gray)
-                        Text("No notebooks yet")
-                            .font(.title2)
-                            .foregroundColor(.gray)
-                        Text("Create your first notebook to get started")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                    }
-                    .padding()
-                } else {
-                    GeometryReader { geometry in
-                        TabView(selection: $currentPage) {
-                            ForEach(Array(filteredNotebooks.enumerated()), id: \.element.id) { index, notebook in
-                                NavigationLink(destination: NotebookDetailView(notebook: notebook)) {
-                                    NotebookCoverCard(notebook: notebook)
-                                        .frame(width: geometry.size.width - 40, height: geometry.size.height - 100)
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    // Header Section
+                    VStack(spacing: 0) {
+                        // Custom Section Selector
+                        HStack(spacing: 0) {
+                            ForEach(0..<3) { index in
+                                Button(action: {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        selectedSection = index
+                                    }
+                                }) {
+                                    VStack(spacing: 8) {
+                                        Text(sectionTitle(for: index))
+                                            .font(.system(size: 16, weight: selectedSection == index ? .semibold : .regular))
+                                            .foregroundColor(selectedSection == index ? .black : .gray)
+                                        
+                                        Rectangle()
+                                            .fill(selectedSection == index ? Color.black : Color.clear)
+                                            .frame(width: 30, height: 2)
+                                    }
                                 }
-                                .buttonStyle(PlainButtonStyle())
-                                .tag(index)
+                                .frame(maxWidth: .infinity)
                             }
                         }
-                        .tabViewStyle(.page(indexDisplayMode: .never))
-                        .frame(height: geometry.size.height - 50)
+                        .padding(.top, 8)
+                        
+                        // Search Bar
+                        SearchBar(text: $searchText)
+                            .padding(.horizontal)
+                            .padding(.vertical, 8)
                     }
+                    .background(Color(.systemBackground))
                     
-                    // Page Indicator
-                    HStack(spacing: 8) {
-                        ForEach(0..<filteredNotebooks.count, id: \.self) { index in
-                            Circle()
-                                .fill(currentPage == index ? Color.blue : Color.gray.opacity(0.3))
-                                .frame(width: 8, height: 8)
+                    // Content Section
+                    if filteredNotebooks.isEmpty {
+                        Spacer()
+                        VStack(spacing: 20) {
+                            Image(systemName: sectionEmptyIcon)
+                                .font(.system(size: 60))
+                                .foregroundColor(.gray)
+                            Text(sectionEmptyTitle)
+                                .font(.title2)
+                                .foregroundColor(.gray)
+                            Text(sectionEmptyMessage)
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                        }
+                        Spacer()
+                    } else {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            GeometryReader { geometry in
+                                Color.clear.preference(key: ScrollOffsetPreferenceKey.self,
+                                    value: geometry.frame(in: .named("scroll")).minX)
+                            }
+                            .frame(width: 0, height: 0)
+                            
+                            HStack(spacing: 20) {
+                                ForEach(Array(filteredNotebooks.enumerated()), id: \.element.id) { index, notebook in
+                                    NotebookCard(
+                                        notebook: notebook,
+                                        index: index,
+                                        totalCount: filteredNotebooks.count,
+                                        scrollOffset: scrollOffset
+                                    )
+                                }
+                                CreateNotebookCard(showingNewNotebook: $showingNewNotebook)
+                            }
+                            .padding(.horizontal)
+                            .padding(.vertical, 12)
+                        }
+                        .coordinateSpace(name: "scroll")
+                        .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                            scrollOffset = value
                         }
                     }
-                    .padding(.bottom, 20)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .navigationTitle("Notebook Space")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showingNewNotebook = true }) {
@@ -82,344 +118,235 @@ struct NotebookSpaceView: View {
                 }
             }
             .sheet(isPresented: $showingNewNotebook) {
-                NewNotebookView(onCreate: { newNotebook in
-                    notebooks.insert(newNotebook, at: 0)
-                    currentPage = 0
-                })
-            }
-        }
-    }
-}
-
-struct NotebookDetailView: View {
-    let notebook: Notebook
-    @State private var pages: [NotebookPage] = []
-    @State private var isAnimating = false
-    @State private var currentRotation: Double = 0
-    @State private var isEditing = false
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        ZStack {
-            // Main content
-            GeometryReader { geometry in
-                TabView {
-                    // Cover Page
-                    ZStack {
-                        // Book spine shadow
-                        Rectangle()
-                            .fill(Color.black.opacity(0.3))
-                            .frame(width: 20)
-                            .blur(radius: 5)
-                            .offset(x: -geometry.size.width/2 + 10)
-                            .opacity(isAnimating ? 1 : 0)
-                        
-                        // Book cover
-                        VStack(spacing: 0) {
-                            ZStack {
-                                // Main cover
-                                RoundedRectangle(cornerRadius: isAnimating ? 0 : 15)
-                                    .fill(notebook.coverColor)
-                                    .frame(width: geometry.size.width - 40, height: geometry.size.height - 40)
-                                    .shadow(radius: isAnimating ? 10 : 5)
-                                    .overlay(
-                                        // Edge shadow for 3D effect
-                                        Rectangle()
-                                            .fill(Color.black.opacity(0.2))
-                                            .frame(width: 20)
-                                            .blur(radius: 5)
-                                            .offset(x: -geometry.size.width/2 + 20)
-                                            .opacity(isAnimating ? 1 : 0)
-                                    )
-                                
-                                // Cover content
-                                VStack(spacing: geometry.size.height * 0.05) {
-                                    Spacer()
-                                        .frame(height: geometry.size.height * 0.1)
-                                    
-                                    Image(systemName: notebook.icon)
-                                        .font(.system(size: min(geometry.size.width, geometry.size.height) * 0.2))
-                                        .foregroundColor(.white)
-                                    
-                                    Text(notebook.title)
-                                        .font(.system(size: min(geometry.size.width, geometry.size.height) * 0.08))
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.white)
-                                        .multilineTextAlignment(.center)
-                                        .padding(.horizontal)
-                                        .minimumScaleFactor(0.5)
-                                    
-                                    Spacer()
-                                    
-                                    // Book metadata at bottom
-                                    VStack(spacing: 8) {
-                                        Text("\(notebook.pageCount) pages")
-                                            .font(.subheadline)
-                                            .foregroundColor(.white.opacity(0.8))
-                                        
-                                        Text(notebook.lastModified, style: .date)
-                                            .font(.caption)
-                                            .foregroundColor(.white.opacity(0.8))
-                                    }
-                                    .padding(.bottom, geometry.size.height * 0.08)
-                                }
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            }
-                        }
-                        .rotation3DEffect(
-                            .degrees(isAnimating ? currentRotation : 0),
-                            axis: (x: 0, y: 1, z: 0),
-                            anchor: .leading,
-                            perspective: 0.3
-                        )
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .tag(0)
-                    
-                    // Content Pages
-                    ForEach(pages) { page in
-                        NotebookPageView(page: page)
-                            .tag(page.id)
-                    }
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-            }
-            
-            // Navigation Bar (custom)
-            VStack {
-                HStack {
-                    // Back Button
-                    Button(action: { dismiss() }) {
-                        HStack {
-                            Image(systemName: "chevron.left")
-                            Text("Notebook Space")
-                        }
-                        .foregroundColor(.blue)
-                    }
-                    
-                    Spacer()
-                    
-                    // Edit Button
-                    Button(action: { isEditing.toggle() }) {
-                        Text("Edit")
-                            .foregroundColor(.blue)
-                    }
-                }
-                .padding()
-                .background(Color(UIColor.systemBackground).opacity(0.8))
-                
-                Spacer()
-            }
-        }
-        .navigationBarHidden(true)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.0)) {
-                isAnimating = true
-            }
-            // Create page-turning effect
-            withAnimation(
-                .easeInOut(duration: 2.0)
-                .repeatForever(autoreverses: true)
-            ) {
-                currentRotation = -5
-            }
-        }
-        .onDisappear {
-            isAnimating = false
-            currentRotation = 0
-        }
-        .sheet(isPresented: $isEditing) {
-            NotebookEditView(notebook: notebook, pages: $pages)
-        }
-    }
-}
-
-struct NotebookPageView: View {
-    let page: NotebookPage
-    
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                // Page background with shadow
-                RoundedRectangle(cornerRadius: 0)
-                    .fill(Color.white)
-                    .frame(width: geometry.size.width - 40, height: geometry.size.height - 40)
-                    .shadow(radius: 5)
-                
-                // Page content
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 20) {
-                        Text(page.title)
-                            .font(.system(size: min(geometry.size.width, geometry.size.height) * 0.06))
-                            .fontWeight(.bold)
-                            .padding(.top, 30)
-                        
-                        Text(page.content)
-                            .font(.system(size: min(geometry.size.width, geometry.size.height) * 0.04))
-                        
-                        if let image = page.image {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFit()
-                                .cornerRadius(10)
-                                .frame(maxWidth: geometry.size.width - 80) // Additional padding for images
-                        }
-                        
-                        Spacer(minLength: 30)
-                    }
-                    .padding(.horizontal, 30)
-                }
-                .frame(width: geometry.size.width - 40, height: geometry.size.height - 40)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-}
-
-struct NewPageView: View {
-    @Environment(\.presentationMode) var presentationMode
-    @State private var title = ""
-    @State private var content = ""
-    @State private var showingImagePicker = false
-    @State private var selectedImage: UIImage?
-    
-    var onCreate: (NotebookPage) -> Void
-    
-    var body: some View {
-        NavigationView {
-            Form {
-                Section(header: Text("Page Details")) {
-                    TextField("Title", text: $title)
-                    TextEditor(text: $content)
-                        .frame(height: 200)
-                }
-                
-                Section(header: Text("Image")) {
-                    Button(action: { showingImagePicker = true }) {
-                        HStack {
-                            Image(systemName: "photo")
-                            Text(selectedImage == nil ? "Add Image" : "Change Image")
-                        }
-                    }
-                    
-                    if let image = selectedImage {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(height: 200)
-                    }
-                }
-            }
-            .navigationTitle("New Page")
-            .navigationBarItems(
-                leading: Button("Cancel") {
-                    presentationMode.wrappedValue.dismiss()
-                },
-                trailing: Button("Create") {
-                    let newPage = NotebookPage(
+                NewNotebookView { title, description, isPublic in
+                    viewModel.createNotebook(
                         title: title,
-                        content: content,
-                        image: selectedImage
+                        isPublic: isPublic,
+                        description: description
                     )
-                    onCreate(newPage)
-                    presentationMode.wrappedValue.dismiss()
+                    showingNewNotebook = false
                 }
-                .disabled(title.isEmpty)
-            )
-            .sheet(isPresented: $showingImagePicker) {
-                ImagePicker(image: $selectedImage)
             }
         }
-    }
-}
-
-struct NotebookPage: Identifiable {
-    let id = UUID()
-    let title: String
-    let content: String
-    let image: UIImage?
-}
-
-struct ImagePicker: UIViewControllerRepresentable {
-    @Binding var image: UIImage?
-    @Environment(\.presentationMode) var presentationMode
-    
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController()
-        picker.delegate = context.coordinator
-        picker.sourceType = .photoLibrary
-        return picker
-    }
-    
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-    
-    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let parent: ImagePicker
-        
-        init(_ parent: ImagePicker) {
-            self.parent = parent
-            super.init()
+        .navigationViewStyle(StackNavigationViewStyle())
+        .onAppear {
+            viewModel.fetchNotebooks()
         }
-        
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            if let image = info[.originalImage] as? UIImage {
-                parent.image = image
-            }
-            parent.presentationMode.wrappedValue.dismiss()
+    }
+    
+    private func sectionTitle(for index: Int) -> String {
+        switch index {
+        case 0: return "My Notebooks"
+        case 1: return "Shared"
+        case 2: return "Pinned"
+        default: return ""
         }
-        
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            parent.presentationMode.wrappedValue.dismiss()
+    }
+    
+    private var sectionEmptyIcon: String {
+        switch selectedSection {
+        case 0: return "book.closed"
+        case 1: return "person.2"
+        case 2: return "pin"
+        default: return "book.closed"
+        }
+    }
+    
+    private var sectionEmptyTitle: String {
+        switch selectedSection {
+        case 0: return "No notebooks yet"
+        case 1: return "No shared notebooks"
+        case 2: return "No pinned notebooks"
+        default: return "No notebooks"
+        }
+    }
+    
+    private var sectionEmptyMessage: String {
+        switch selectedSection {
+        case 0: return "Create your first notebook to get started"
+        case 1: return "Notebooks shared with you will appear here"
+        case 2: return "Pin your favorite notebooks to access them quickly"
+        default: return ""
         }
     }
 }
 
-struct NotebookCoverCard: View {
+struct NotebookCard: View {
     let notebook: Notebook
+    let index: Int
+    let totalCount: Int
+    let scrollOffset: CGFloat
+    
+    private var gradientColors: [Color] {
+        let colors: [[Color]] = [
+            [Color(hex: "2E7D32"), Color(hex: "43A047")], // Dark green to medium green
+            [Color(hex: "388E3C"), Color(hex: "4CAF50")], // Medium green to light green
+            [Color(hex: "43A047"), Color(hex: "66BB6A")], // Medium green to lighter green
+            [Color(hex: "4CAF50"), Color(hex: "81C784")], // Light green to very light green
+            [Color(hex: "66BB6A"), Color(hex: "A5D6A7")]  // Lighter green to mint green
+        ]
+        // Change color every 50 points of scroll for more frequent changes
+        let colorIndex = (abs(Int(scrollOffset)) / 50) % colors.count
+        return colors[colorIndex]
+    }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Cover Image
-            ZStack {
-                RoundedRectangle(cornerRadius: 15)
-                    .fill(notebook.coverColor)
-                    .frame(height: 300)
-                    .shadow(radius: 5)
+        NavigationLink(destination: NotebookDetailView(notebook: notebook)) {
+            // Main notebook container
+            HStack(spacing: 0) {
+                // Spine
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                gradientColors[0].opacity(0.95),
+                                gradientColors[1].opacity(0.85)
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 40)
+                    .overlay(
+                        // Spine text
+                        Text(notebook.title)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white)
+                            .rotationEffect(.degrees(-90))
+                            .frame(width: 120)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .offset(y: 25)
+                    )
                 
-                VStack {
-                    Image(systemName: notebook.icon)
-                        .font(.system(size: 70))
-                        .foregroundColor(.white)
-                        .padding(.bottom, 10)
+                // Cover
+                ZStack {
+                    // Cover background with dynamic gradient
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: [
+                                    gradientColors[0].opacity(0.85),
+                                    gradientColors[1].opacity(0.75)
+                                ]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 320, height: 400)
                     
-                    Text(notebook.title)
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
+                    // Content
+                    VStack {
+                        Spacer()
+                        
+                        // Title
+                        Text(notebook.title)
+                            .font(.system(size: 32, weight: .bold))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .padding(.horizontal, 24)
+                            .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
+                        
+                        Spacer()
+                        
+                        // Notebook info
+                        HStack {
+                            if notebook.isPinned {
+                                Image(systemName: "pin.fill")
+                                    .foregroundColor(.white.opacity(0.9))
+                            }
+                            if notebook.isPublic {
+                                Image(systemName: "person.2.fill")
+                                    .foregroundColor(.white.opacity(0.9))
+                            }
+                            Spacer()
+                            Text("\(notebook.pages.count) pages")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.9))
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 24)
+                    }
                 }
             }
-            
-            // Notebook Info
-            HStack {
-                Image(systemName: "book.closed.fill")
-                    .foregroundColor(.blue)
-                Text("\(notebook.pageCount) pages")
-                    .font(.caption)
-                    .foregroundColor(.gray)
+            .frame(width: 360, height: 400)
+            .cornerRadius(8)
+            .shadow(color: .black.opacity(0.2), radius: 5, x: 0, y: 2)
+        }
+    }
+}
+
+struct CreateNotebookCard: View {
+    @Binding var showingNewNotebook: Bool
+    
+    var body: some View {
+        Button(action: { showingNewNotebook = true }) {
+            // Main notebook container
+            HStack(spacing: 0) {
+                // Spine
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color.blue.opacity(0.4),
+                                Color.blue.opacity(0.3)
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 40)
+                    .overlay(
+                        // Spine text
+                        Text("New")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.blue)
+                            .rotationEffect(.degrees(-90))
+                            .frame(width: 120)
+                            .offset(y: 25)
+                    )
                 
-                Spacer()
-                
-                Text(notebook.lastModified, style: .date)
-                    .font(.caption)
-                    .foregroundColor(.gray)
+                // Cover
+                ZStack {
+                    // Cover background
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: [
+                                    Color.blue.opacity(0.1),
+                                    Color.blue.opacity(0.05)
+                                ]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 320, height: 400)
+                        .overlay(
+                            Rectangle()
+                                .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                        )
+                    
+                    // Content
+                    VStack(spacing: 20) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 50))
+                            .foregroundColor(.blue.opacity(0.8))
+                        
+                        Text("Create New Notebook")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.blue)
+                        
+                        Text("Start a new journey")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                }
             }
-            .padding(.horizontal)
+            .frame(width: 360, height: 400)
+            .cornerRadius(8)
+            .shadow(color: .black.opacity(0.1), radius: 3, x: 0, y: 1)
         }
     }
 }
@@ -445,7 +372,7 @@ struct SearchBar: View {
             }
         }
         .padding(8)
-        .background(Color.gray.opacity(0.1))
+        .background(Color(.systemGray6))
         .cornerRadius(10)
     }
 }
@@ -454,13 +381,9 @@ struct NewNotebookView: View {
     @Environment(\.presentationMode) var presentationMode
     @State private var title = ""
     @State private var description = ""
-    @State private var selectedColor: Color = .blue
-    @State private var selectedIcon: String = "book.closed.fill"
+    @State private var isPublic = false
     
-    let colors: [Color] = [.blue, .green, .purple, .orange, .pink, .red]
-    let icons: [String] = ["book.closed.fill", "book.fill", "text.book.closed.fill", "book.circle.fill"]
-    
-    var onCreate: (Notebook) -> Void
+    var onCreate: (String, String?, Bool) -> Void
     
     var body: some View {
         NavigationView {
@@ -470,45 +393,8 @@ struct NewNotebookView: View {
                     TextField("Description", text: $description)
                 }
                 
-                Section(header: Text("Cover Design")) {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 15) {
-                            ForEach(colors, id: \.self) { color in
-                                Circle()
-                                    .fill(color)
-                                    .frame(width: 30, height: 30)
-                                    .overlay(
-                                        Circle()
-                                            .stroke(Color.primary, lineWidth: selectedColor == color ? 2 : 0)
-                                    )
-                                    .onTapGesture {
-                                        selectedColor = color
-                                    }
-                            }
-                        }
-                        .padding(.vertical, 5)
-                    }
-                    
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 15) {
-                            ForEach(icons, id: \.self) { icon in
-                                Image(systemName: icon)
-                                    .font(.title2)
-                                    .foregroundColor(selectedIcon == icon ? .blue : .gray)
-                                    .frame(width: 40, height: 40)
-                                    .background(Color.gray.opacity(0.1))
-                                    .cornerRadius(8)
-                                    .onTapGesture {
-                                        selectedIcon = icon
-                                    }
-                            }
-                        }
-                        .padding(.vertical, 5)
-                    }
-                }
-                
                 Section(header: Text("Settings")) {
-                    Toggle("Private Notebook", isOn: .constant(false))
+                    Toggle("Public Notebook", isOn: $isPublic)
                 }
             }
             .navigationTitle("New Notebook")
@@ -517,14 +403,7 @@ struct NewNotebookView: View {
                     presentationMode.wrappedValue.dismiss()
                 },
                 trailing: Button("Create") {
-                    let newNotebook = Notebook(
-                        title: title,
-                        pageCount: 0,
-                        lastModified: Date(),
-                        coverColor: selectedColor,
-                        icon: selectedIcon
-                    )
-                    onCreate(newNotebook)
+                    onCreate(title, description.isEmpty ? nil : description, isPublic)
                     presentationMode.wrappedValue.dismiss()
                 }
                 .disabled(title.isEmpty)
@@ -533,56 +412,36 @@ struct NewNotebookView: View {
     }
 }
 
-struct Notebook: Identifiable {
-    let id = UUID()
-    let title: String
-    let pageCount: Int
-    let lastModified: Date
-    let coverColor: Color
-    let icon: String
+struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
 }
 
-struct NotebookEditView: View {
-    let notebook: Notebook
-    @Binding var pages: [NotebookPage]
-    @Environment(\.presentationMode) var presentationMode
-    
-    var body: some View {
-        NavigationView {
-            List {
-                Section(header: Text("Pages")) {
-                    ForEach(pages) { page in
-                        HStack {
-                            Text(page.title)
-                            Spacer()
-                            Text("\(page.content.prefix(30))...")
-                                .foregroundColor(.gray)
-                                .lineLimit(1)
-                        }
-                    }
-                    .onMove { from, to in
-                        pages.move(fromOffsets: from, toOffset: to)
-                    }
-                    .onDelete { indexSet in
-                        pages.remove(atOffsets: indexSet)
-                    }
-                    
-                    Button(action: addNewPage) {
-                        Label("Add Page", systemImage: "plus")
-                    }
-                }
-            }
-            .navigationTitle("Edit Notebook")
-            .navigationBarItems(
-                leading: Button("Done") {
-                    presentationMode.wrappedValue.dismiss()
-                }
-            )
+// Helper extension for hex colors
+extension Color {
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch hex.count {
+        case 3: // RGB (12-bit)
+            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
+        case 6: // RGB (24-bit)
+            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8: // ARGB (32-bit)
+            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default:
+            (a, r, g, b) = (1, 1, 1, 0)
         }
+        self.init(
+            .sRGB,
+            red: Double(r) / 255,
+            green: Double(g) / 255,
+            blue:  Double(b) / 255,
+            opacity: Double(a) / 255
+        )
     }
-    
-    private func addNewPage() {
-        let newPage = NotebookPage(title: "New Page", content: "", image: nil)
-        pages.append(newPage)
-    }
-} 
+}

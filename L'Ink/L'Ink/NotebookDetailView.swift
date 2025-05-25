@@ -4,7 +4,7 @@ import PencilKit
 struct NotebookDetailView: View {
     let notebook: Notebook
     @StateObject private var viewModel: NotebookViewModel
-    @State private var selectedPageIndex = 0
+    @State private var selectedPageIndex: Int
     @State private var showingNewPageSheet = false
     @State private var newPageType: PageType = .text
     @State private var rotation: Double = 0
@@ -14,6 +14,8 @@ struct NotebookDetailView: View {
     init(notebook: Notebook) {
         self.notebook = notebook
         _viewModel = StateObject(wrappedValue: NotebookViewModel())
+        // Initialize selectedPageIndex with the last viewed page
+        _selectedPageIndex = State(initialValue: notebook.lastViewedPageIndex)
     }
     
     var body: some View {
@@ -52,6 +54,7 @@ struct NotebookDetailView: View {
                                 .onTapGesture {
                                     withAnimation {
                                         selectedPageIndex = index
+                                        saveLastViewedPage()
                                     }
                                 }
                             }
@@ -117,6 +120,7 @@ struct NotebookDetailView: View {
                             }
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                                 selectedPageIndex += 1
+                                saveLastViewedPage()
                                 rotation = 0
                                 isFlipping = false
                             }
@@ -127,6 +131,7 @@ struct NotebookDetailView: View {
                             }
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                                 selectedPageIndex -= 1
+                                saveLastViewedPage()
                                 rotation = 0
                                 isFlipping = false
                             }
@@ -190,6 +195,12 @@ struct NotebookDetailView: View {
         }
     }
     
+    private func saveLastViewedPage() {
+        var updatedNotebook = notebook
+        updatedNotebook.lastViewedPageIndex = selectedPageIndex
+        viewModel.updateNotebook(updatedNotebook)
+    }
+    
     private func nextPage() {
         if selectedPageIndex < notebook.pages.count {
             withAnimation(.easeInOut(duration: 0.5)) {
@@ -198,6 +209,7 @@ struct NotebookDetailView: View {
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                 selectedPageIndex += 1
+                saveLastViewedPage()
                 rotation = 0
                 isFlipping = false
             }
@@ -212,6 +224,7 @@ struct NotebookDetailView: View {
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                 selectedPageIndex -= 1
+                saveLastViewedPage()
                 rotation = 0
                 isFlipping = false
             }

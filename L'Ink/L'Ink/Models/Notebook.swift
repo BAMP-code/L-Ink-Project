@@ -25,6 +25,7 @@ struct Notebook: Identifiable, Codable {
     var createdAt: Date
     var updatedAt: Date
     var pages: [Page]
+    var lastViewedPageIndex: Int
     
     init(id: String = UUID().uuidString,
          title: String,
@@ -34,7 +35,8 @@ struct Notebook: Identifiable, Codable {
          isPinned: Bool = false,
          createdAt: Date = Date(),
          updatedAt: Date = Date(),
-         pages: [Page] = []) {
+         pages: [Page] = [],
+         lastViewedPageIndex: Int = 0) {
         self.id = id
         self.title = title
         self.description = description
@@ -44,6 +46,7 @@ struct Notebook: Identifiable, Codable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.pages = pages
+        self.lastViewedPageIndex = lastViewedPageIndex
     }
     
     // Firestore document conversion
@@ -57,6 +60,7 @@ struct Notebook: Identifiable, Codable {
             "isPinned": isPinned,
             "createdAt": Timestamp(date: createdAt),
             "updatedAt": Timestamp(date: updatedAt),
+            "lastViewedPageIndex": lastViewedPageIndex,
             "pages": pages.map { page in
                 [
                     "id": page.id,
@@ -82,6 +86,7 @@ struct Notebook: Identifiable, Codable {
         }
         
         let description = dict["description"] as? String
+        let lastViewedPageIndex = dict["lastViewedPageIndex"] as? Int ?? 0
         let pages = (dict["pages"] as? [[String: Any]])?.compactMap { pageDict -> Page? in
             guard let pageId = pageDict["id"] as? String,
                   let content = pageDict["content"] as? String,
@@ -112,7 +117,8 @@ struct Notebook: Identifiable, Codable {
             isPinned: isPinned,
             createdAt: createdAt,
             updatedAt: updatedAt,
-            pages: pages
+            pages: pages,
+            lastViewedPageIndex: lastViewedPageIndex
         )
     }
 } 

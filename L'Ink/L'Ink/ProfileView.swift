@@ -21,8 +21,7 @@ struct ProfileView: View {
     let featuredScrapbooks: [String] = ["My Best Scrapbook"]
     let badges: [String] = ["Creative Star", "Consistent Contributor", "Community Helper"]
     let scrapbookStats = (
-        pages: 123,
-        favoriteStickerPack: "Cute Animals"
+        pages: 123
     )
     
     var body: some View {
@@ -185,7 +184,6 @@ struct ProfileView: View {
                         HStack {
                             Text("Pages Created: \(scrapbookStats.pages)")
                             Spacer()
-                            Text("Fav. Stickers: \(scrapbookStats.favoriteStickerPack)")
                         }
                         .font(.subheadline)
                     }

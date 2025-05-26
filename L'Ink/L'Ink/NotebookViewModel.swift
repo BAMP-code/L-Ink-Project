@@ -47,24 +47,23 @@ class NotebookViewModel: ObservableObject {
     }
     
     private func createDefaultNotebook() {
+        let coverPage = Page(
+            id: UUID().uuidString,
+            content: "Welcome to your notebook!",
+            type: .cover,
+            createdAt: Date(),
+            updatedAt: Date(),
+            order: 0
+        )
         let defaultNotebook = Notebook(
             title: "My First Notebook",
             description: "Welcome to L'Ink! This is your first notebook.",
             ownerId: testUserId,
             isPublic: false,
             isPinned: false,
-            pages: [
-                Page(
-                    id: UUID().uuidString,
-                    content: "Welcome to your first page! You can write text here or create ink drawings.",
-                    type: .text,
-                    createdAt: Date(),
-                    updatedAt: Date(),
-                    order: 0
-                )
-            ]
+            pages: [coverPage],
+            lastViewedPageIndex: 0
         )
-        
         db.collection("notebooks").document(defaultNotebook.id).setData(defaultNotebook.dictionary) { error in
             if let error = error {
                 print("Error creating default notebook: \(error.localizedDescription)")
@@ -73,14 +72,23 @@ class NotebookViewModel: ObservableObject {
     }
     
     func createNotebook(title: String, isPublic: Bool, description: String? = nil) {
+        let coverPage = Page(
+            id: UUID().uuidString,
+            content: "Welcome to your notebook!",
+            type: .cover,
+            createdAt: Date(),
+            updatedAt: Date(),
+            order: 0
+        )
         let notebook = Notebook(
             title: title,
             description: description,
             ownerId: testUserId,
             isPublic: isPublic,
-            isPinned: false
+            isPinned: false,
+            pages: [coverPage],
+            lastViewedPageIndex: 0
         )
-        
         db.collection("notebooks").document(notebook.id).setData(notebook.dictionary) { error in
             if let error = error {
                 print("Error creating notebook: \(error.localizedDescription)")
@@ -119,7 +127,7 @@ class NotebookViewModel: ObservableObject {
             type: type,
             createdAt: Date(),
             updatedAt: Date(),
-            order: notebook.pages.count
+            order: updatedNotebook.pages.count
         )
         updatedNotebook.pages.append(newPage)
         updatedNotebook.updatedAt = Date()

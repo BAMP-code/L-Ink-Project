@@ -45,6 +45,22 @@ class AuthViewModel: ObservableObject {
     }
     
     func signIn(email: String, password: String) {
+        #if DEBUG
+        if email.isEmpty && password.isEmpty {
+            let testUser = AppUser(
+                id: "dev-placeholder-user",
+                username: "TestUser",
+                email: "test@example.com",
+                createdAt: Date(),
+                updatedAt: Date()
+            )
+            self.currentUser = testUser
+            self.isAuthenticated = true
+            print("Signed in with placeholder user (DEBUG)")
+            return
+        }
+        #endif
+
         Auth.auth().signIn(withEmail: email, password: password) { [weak self] result, error in
             guard let self = self else { return }
             if let error = error {

@@ -1,15 +1,104 @@
 import SwiftUI
 import FirebaseStorage
+import PhotosUI
+
+@MainActor
+class ProfileImageViewModel: ObservableObject {
+    @Published var headerImage: UIImage?
+    @Published var profileImage: UIImage?
+    @Published var isUploading = false
+    private var authViewModel: AuthViewModel
+    
+    init(authViewModel: AuthViewModel) {
+        self.authViewModel = authViewModel
+    }
+    
+    func updateAuthViewModel(_ newAuthViewModel: AuthViewModel) {
+        self.authViewModel = newAuthViewModel
+    }
+    
+    func handleHeaderImageSelection(_ item: PhotosPickerItem) async {
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              let image = UIImage(data: data) else { return }
+        print("📸 Header image selected")
+        headerImage = image
+        await uploadHeaderImage(image)
+    }
+    
+    func handleProfileImageSelection(_ item: PhotosPickerItem) async {
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              let image = UIImage(data: data) else { return }
+        print("📸 Profile image selected")
+        profileImage = image
+        await uploadProfileImage(image)
+    }
+    
+    private func uploadHeaderImage(_ image: UIImage) async {
+        guard let userId = authViewModel.currentUser?.id else { 
+            print("❌ Error: No user ID found")
+            return 
+        }
+        print("📸 Starting header image upload for user: \(userId)")
+        isUploading = true
+        
+        do {
+            let path = "users/\(userId)/header.jpg"
+            print("📤 Uploading header image to path: \(path)")
+            let imageURL = try await StorageService.shared.uploadImage(image, path: path)
+            print("✅ Header image uploaded successfully. URL: \(imageURL)")
+            
+            var updatedUser = authViewModel.currentUser
+            updatedUser?.headerImageURL = imageURL
+            updatedUser?.updatedAt = Date()
+            if let user = updatedUser {
+                try await authViewModel.updateUser(user)
+                print("✅ User updated successfully with header image")
+            }
+        } catch {
+            print("❌ Error uploading header image: \(error)")
+        }
+        isUploading = false
+    }
+    
+    private func uploadProfileImage(_ image: UIImage) async {
+        guard let userId = authViewModel.currentUser?.id else { 
+            print("❌ Error: No user ID found")
+            return 
+        }
+        print("📸 Starting profile image upload for user: \(userId)")
+        isUploading = true
+        
+        do {
+            let path = "users/\(userId)/profile.jpg"
+            print("📤 Uploading profile image to path: \(path)")
+            let imageURL = try await StorageService.shared.uploadImage(image, path: path)
+            print("✅ Profile image uploaded successfully. URL: \(imageURL)")
+            
+            var updatedUser = authViewModel.currentUser
+            updatedUser?.profileImageURL = imageURL
+            updatedUser?.updatedAt = Date()
+            if let user = updatedUser {
+                try await authViewModel.updateUser(user)
+                print("✅ User updated successfully with profile image")
+            }
+        } catch {
+            print("❌ Error uploading profile image: \(error)")
+        }
+        isUploading = false
+    }
+}
 
 struct ProfileView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
+    @StateObject private var imageViewModel: ProfileImageViewModel
     @State private var showingEditProfile = false
     @State private var showingSettings = false
-    @State private var headerImage: UIImage?
-    @State private var showingImagePicker = false
-    @State private var profileImage: UIImage?
-    @State private var showingProfileImagePicker = false
-    @State private var isUploading = false
+    @State private var selectedHeaderItem: PhotosPickerItem?
+    @State private var selectedProfileItem: PhotosPickerItem?
+    
+    init() {
+        _imageViewModel = StateObject(wrappedValue: ProfileImageViewModel(authViewModel: AuthViewModel()))
+    }
     
     // Sample data
     let savedNotebooks: [String: [String]] = [
@@ -32,7 +121,7 @@ struct ProfileView: View {
                     // Header and profile image section
                     ZStack(alignment: .bottomLeading) {
                         // Header image
-                        if let headerImage = headerImage {
+                        if let headerImage = imageViewModel.headerImage {
                             Image(uiImage: headerImage)
                                 .resizable()
                                 .scaledToFill()
@@ -69,12 +158,21 @@ struct ProfileView: View {
                             Spacer()
                             VStack {
                                 Spacer()
-                                Button(action: { showingImagePicker = true }) {
+                                PhotosPicker(selection: $selectedHeaderItem,
+                                           matching: .images,
+                                           photoLibrary: .shared()) {
                                     Image(systemName: "camera.fill")
                                         .padding(8)
                                         .background(Color.white.opacity(0.8))
                                         .clipShape(Circle())
                                         .shadow(radius: 2)
+                                }
+                                .onChange(of: selectedHeaderItem) { _, newValue in
+                                    if let item = newValue {
+                                        Task {
+                                            await imageViewModel.handleHeaderImageSelection(item)
+                                        }
+                                    }
                                 }
                                 .padding(.trailing, 32)
                                 .padding(.bottom, 16)
@@ -83,7 +181,7 @@ struct ProfileView: View {
                         
                         // Profile image (overlapping bottom left)
                         ZStack(alignment: .bottomTrailing) {
-                            if let profileImage = profileImage {
+                            if let profileImage = imageViewModel.profileImage {
                                 Image(uiImage: profileImage)
                                     .resizable()
                                     .scaledToFill()
@@ -118,30 +216,23 @@ struct ProfileView: View {
                                     .offset(x: 32, y: 50)
                             }
                             
-                            Button(action: { showingProfileImagePicker = true }) {
+                            PhotosPicker(selection: $selectedProfileItem,
+                                       matching: .images,
+                                       photoLibrary: .shared()) {
                                 Image(systemName: "camera.fill")
                                     .padding(6)
                                     .background(Color.white.opacity(0.8))
                                     .clipShape(Circle())
-                                    .offset(x: 32, y: 54)
                             }
+                            .onChange(of: selectedProfileItem) { _, newValue in
+                                if let item = newValue {
+                                    Task {
+                                        await imageViewModel.handleProfileImageSelection(item)
+                                    }
+                                }
+                            }
+                            .offset(x: 32, y: 54)
                         }
-                    }
-                    .sheet(isPresented: $showingImagePicker) {
-                        ImagePicker(image: $headerImage)
-                            .onChange(of: headerImage) { newImage in
-                                if let image = newImage {
-                                    uploadHeaderImage(image)
-                                }
-                            }
-                    }
-                    .sheet(isPresented: $showingProfileImagePicker) {
-                        ImagePicker(image: $profileImage)
-                            .onChange(of: profileImage) { newImage in
-                                if let image = newImage {
-                                    uploadProfileImage(image)
-                                }
-                            }
                     }
 
                     // Add vertical spacing below the header/profile image
@@ -292,7 +383,7 @@ struct ProfileView: View {
                 SettingsView()
             }
             .overlay {
-                if isUploading {
+                if imageViewModel.isUploading {
                     ProgressView()
                         .scaleEffect(1.5)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -300,53 +391,8 @@ struct ProfileView: View {
                 }
             }
         }
-    }
-    
-    private func uploadHeaderImage(_ image: UIImage) {
-        guard let userId = authViewModel.currentUser?.id else { return }
-        isUploading = true
-        
-        Task {
-            do {
-                let path = "users/\(userId)/header.jpg"
-                let imageURL = try await StorageService.shared.uploadImage(image, path: path)
-                
-                // Update user profile in Firestore
-                var updatedUser = authViewModel.currentUser
-                updatedUser?.headerImageURL = imageURL
-                if let user = updatedUser {
-                    try await authViewModel.updateUser(user)
-                }
-                
-                isUploading = false
-            } catch {
-                print("Error uploading header image: \(error)")
-                isUploading = false
-            }
-        }
-    }
-    
-    private func uploadProfileImage(_ image: UIImage) {
-        guard let userId = authViewModel.currentUser?.id else { return }
-        isUploading = true
-        
-        Task {
-            do {
-                let path = "users/\(userId)/profile.jpg"
-                let imageURL = try await StorageService.shared.uploadImage(image, path: path)
-                
-                // Update user profile in Firestore
-                var updatedUser = authViewModel.currentUser
-                updatedUser?.profileImageURL = imageURL
-                if let user = updatedUser {
-                    try await authViewModel.updateUser(user)
-                }
-                
-                isUploading = false
-            } catch {
-                print("Error uploading profile image: \(error)")
-                isUploading = false
-            }
+        .onAppear {
+            imageViewModel.updateAuthViewModel(authViewModel)
         }
     }
 }

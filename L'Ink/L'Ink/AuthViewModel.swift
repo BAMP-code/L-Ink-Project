@@ -20,10 +20,9 @@ class AuthViewModel: ObservableObject {
     private let db = Firestore.firestore()
     
     init() {
-        // For testing, create a default user with ID "bamp"
-        Task {
-            await createDefaultUser()
-        }
+        // Initialize without automatic authentication
+        isAuthenticated = false
+        currentUser = nil
     }
     
     private func createDefaultUser() async {
@@ -35,18 +34,22 @@ class AuthViewModel: ObservableObject {
                 let defaultUser = AppUser(
                     id: "bamp",
                     username: "Bamp",
-                    email: "bamp@example.com"
+                    email: "bamp@example.com",
+                    createdAt: Date(),
+                    updatedAt: Date()
                 )
                 
                 try await db.collection("users").document("bamp").setData(defaultUser.dictionary)
                 await MainActor.run {
                     self.currentUser = defaultUser
+                    self.isAuthenticated = true
                 }
             } else {
                 // Load existing user
                 if let user = AppUser.fromDictionary(userDoc.data() ?? [:]) {
                     await MainActor.run {
                         self.currentUser = user
+                        self.isAuthenticated = true
                     }
                 }
             }
@@ -86,20 +89,16 @@ class AuthViewModel: ObservableObject {
             createdAt: Date(),
             updatedAt: Date()
         )
-        self.currentUser = user
-        self.isAuthenticated = true
+        
+        // Only authenticate if email and password are not empty
+        if !email.isEmpty && !password.isEmpty {
+            self.currentUser = user
+            self.isAuthenticated = true
+        }
     }
     
     func signOut() {
-        // TODO: Implement actual sign out logic
-        // This is a placeholder implementation
         currentUser = nil
-        isAuthenticated = false
-    }
-    
-    private func checkAuthStatus() {
-        // TODO: Implement actual auth status check
-        // This would typically check local storage or keychain
         isAuthenticated = false
     }
 }

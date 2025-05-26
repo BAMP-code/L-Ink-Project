@@ -18,10 +18,6 @@ class NotebookViewModel: ObservableObject {
     
     func fetchNotebooks() {
         db.collection("notebooks")
-            .whereFilter(Filter.orFilter([
-                Filter.whereField("ownerId", isEqualTo: testUserId),
-                Filter.whereField("isPublic", isEqualTo: true)
-            ]))
             .addSnapshotListener { [weak self] snapshot, error in
                 guard let documents = snapshot?.documents else {
                     print("Error fetching notebooks: \(error?.localizedDescription ?? "Unknown error")")

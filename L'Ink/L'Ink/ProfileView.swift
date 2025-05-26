@@ -20,9 +20,7 @@ struct ProfileView: View {
     let likedNotebooks: [String] = ["Art Portfolio 2024", "Math Notes"]
     let featuredScrapbooks: [String] = ["My Best Scrapbook"]
     let badges: [String] = ["Creative Star", "Consistent Contributor", "Community Helper"]
-    let scrapbookStats = (
-        pages: 123
-    )
+    let scrapbookPages = 123
     
     var body: some View {
         NavigationView {
@@ -182,7 +180,7 @@ struct ProfileView: View {
                         Text("Scrapbook Stats")
                             .font(.headline)
                         HStack {
-                            Text("Pages Created: \(scrapbookStats.pages)")
+                            Text("Pages Created: \(scrapbookPages)")
                             Spacer()
                         }
                         .font(.subheadline)

@@ -21,28 +21,25 @@ struct LInkApp: App {
     var body: some Scene {
         WindowGroup {
             NavigationView {
-                ContentView()
-                    .environmentObject(authViewModel)
-                    .environmentObject(appConfig)
-                    .preferredColorScheme(.light)
-                    .onAppear {
-                        // Optimize initial rendering
-                        DispatchQueue.main.async {
-                            appConfig.initialize()
-                        }
-                    }
+                if authViewModel.isAuthenticated {
+                    // Replace with your main logged-in view
+                    Text("Welcome, \(authViewModel.currentUser?.username ?? "")")
+                } else {
+                    SignInView()
+                }
+            }
+            .environmentObject(authViewModel)
+            .environmentObject(appConfig)
+            .preferredColorScheme(.light)
+            .onAppear {
+                DispatchQueue.main.async {
+                    appConfig.initialize()
+                }
             }
         }
-        .onChange(of: scenePhase) { oldPhase, newPhase in
-            switch newPhase {
-            case .active:
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
                 appConfig.syncMetadata()
-            case .inactive:
-                break
-            case .background:
-                break
-            @unknown default:
-                break
             }
         }
     }

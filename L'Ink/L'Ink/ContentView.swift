@@ -6,19 +6,21 @@ struct ContentView: View {
     @StateObject private var appViewModel = AppViewModel()
     
     var body: some View {
-        Group {
-            if appConfig.isInitialized {
-                if authViewModel.isAuthenticated {
-                    MainTabView()
-                        .environmentObject(appViewModel)
-                } else {
-                    SignInView()
-                }
-            } else {
-                ProgressView()
-                    .onAppear {
-                        appConfig.initialize()
+        NavigationStack {
+            Group {
+                if appConfig.isInitialized {
+                    if authViewModel.isAuthenticated {
+                        MainTabView()
+                            .environmentObject(appViewModel)
+                    } else {
+                        SignInView()
                     }
+                } else {
+                    ProgressView()
+                        .onAppear {
+                            appConfig.initialize()
+                        }
+                }
             }
         }
     }

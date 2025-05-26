@@ -7,6 +7,9 @@ struct NotebookSpaceView: View {
     @State private var searchText = ""
     @State private var selectedSection = 0
     @State private var scrollOffset: CGFloat = 0
+    @State private var isEditMode = false
+    @State private var notebookToDelete: Notebook?
+    @State private var showingDeleteAlert = false
     
     var filteredNotebooks: [Notebook] {
         let notebooks: [Notebook]
@@ -30,90 +33,108 @@ struct NotebookSpaceView: View {
     
     var body: some View {
         NavigationView {
-            GeometryReader { geometry in
+            VStack(spacing: 0) {
+                // Header Section
                 VStack(spacing: 0) {
-                    // Header Section
-                    VStack(spacing: 0) {
-                        // Custom Section Selector
-                        HStack(spacing: 0) {
-                            ForEach(0..<3) { index in
-                                Button(action: {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        selectedSection = index
-                                    }
-                                }) {
-                                    VStack(spacing: 8) {
-                                        Text(sectionTitle(for: index))
-                                            .font(.system(size: 16, weight: selectedSection == index ? .semibold : .regular))
-                                            .foregroundColor(selectedSection == index ? .black : .gray)
-                                        
-                                        Rectangle()
-                                            .fill(selectedSection == index ? Color.black : Color.clear)
-                                            .frame(width: 30, height: 2)
-                                    }
+                    // Custom Section Selector
+                    HStack(spacing: 0) {
+                        ForEach(0..<3) { index in
+                            Button(action: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    selectedSection = index
                                 }
-                                .frame(maxWidth: .infinity)
+                            }) {
+                                VStack(spacing: 8) {
+                                    Text(sectionTitle(for: index))
+                                        .font(.system(size: 16, weight: selectedSection == index ? .semibold : .regular))
+                                        .foregroundColor(selectedSection == index ? .black : .gray)
+                                    
+                                    Rectangle()
+                                        .fill(selectedSection == index ? Color.black : Color.clear)
+                                        .frame(width: 30, height: 2)
+                                }
                             }
+                            .frame(maxWidth: .infinity)
                         }
-                        .padding(.top, 8)
-                        
-                        // Search Bar
-                        SearchBar(text: $searchText)
-                            .padding(.horizontal)
-                            .padding(.vertical, 8)
                     }
-                    .background(Color(.systemBackground))
+                    .padding(.top, 8)
                     
-                    // Content Section
-                    if filteredNotebooks.isEmpty {
-                        Spacer()
-                        VStack(spacing: 20) {
-                            Image(systemName: sectionEmptyIcon)
-                                .font(.system(size: 60))
-                                .foregroundColor(.gray)
-                            Text(sectionEmptyTitle)
-                                .font(.title2)
-                                .foregroundColor(.gray)
-                            Text(sectionEmptyMessage)
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
+                    // Search Bar
+                    SearchBar(text: $searchText)
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
+                }
+                .background(Color(.systemBackground))
+                
+                // Content Section
+                if filteredNotebooks.isEmpty {
+                    Spacer()
+                    VStack(spacing: 20) {
+                        Image(systemName: sectionEmptyIcon)
+                            .font(.system(size: 60))
+                            .foregroundColor(.gray)
+                        Text(sectionEmptyTitle)
+                            .font(.title2)
+                            .foregroundColor(.gray)
+                        Text(sectionEmptyMessage)
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                    Spacer()
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        GeometryReader { geometry in
+                            Color.clear.preference(key: ScrollOffsetPreferenceKey.self,
+                                value: geometry.frame(in: .named("scroll")).minX)
                         }
-                        Spacer()
-                    } else {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            GeometryReader { geometry in
-                                Color.clear.preference(key: ScrollOffsetPreferenceKey.self,
-                                    value: geometry.frame(in: .named("scroll")).minX)
-                            }
-                            .frame(width: 0, height: 0)
-                            
-                            HStack(spacing: 20) {
-                                ForEach(Array(filteredNotebooks.enumerated()), id: \.element.id) { index, notebook in
-                                    NotebookCard(
-                                        notebook: notebook,
-                                        index: index,
-                                        totalCount: filteredNotebooks.count,
-                                        scrollOffset: scrollOffset
-                                    )
+                        .frame(width: 0, height: 0)
+                        
+                        HStack(spacing: 20) {
+                            ForEach(Array(filteredNotebooks.enumerated()), id: \.element.id) { index, notebook in
+                                if isEditMode {
+                                    NotebookCard(notebook: notebook, index: index, totalCount: filteredNotebooks.count, scrollOffset: scrollOffset)
+                                        .overlay(
+                                            Button(action: {
+                                                notebookToDelete = notebook
+                                                showingDeleteAlert = true
+                                            }) {
+                                                Image(systemName: "minus.circle.fill")
+                                                    .font(.system(size: 30))
+                                                    .foregroundColor(.red)
+                                                    .background(Color.white)
+                                                    .clipShape(Circle())
+                                            }
+                                            .padding(8),
+                                            alignment: .topTrailing
+                                        )
+                                } else {
+                                    NotebookCard(notebook: notebook, index: index, totalCount: filteredNotebooks.count, scrollOffset: scrollOffset)
                                 }
+                            }
+                            if !isEditMode {
                                 CreateNotebookCard(showingNewNotebook: $showingNewNotebook)
                             }
-                            .padding(.horizontal)
-                            .padding(.vertical, 12)
                         }
-                        .coordinateSpace(name: "scroll")
-                        .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                            scrollOffset = value
-                        }
+                        .padding(.horizontal)
+                        .padding(.vertical, 12)
+                    }
+                    .coordinateSpace(name: "scroll")
+                    .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                        scrollOffset = value
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showingNewNotebook = true }) {
-                        Image(systemName: "plus")
+                    if isEditMode {
+                        Button("Done") {
+                            isEditMode = false
+                        }
+                    } else {
+                        Button("Edit") {
+                            isEditMode = true
+                        }
                     }
                 }
             }
@@ -126,6 +147,16 @@ struct NotebookSpaceView: View {
                     )
                     showingNewNotebook = false
                 }
+            }
+            .alert("Delete Notebook", isPresented: $showingDeleteAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    if let notebook = notebookToDelete {
+                        viewModel.deleteNotebook(notebook)
+                    }
+                }
+            } message: {
+                Text("Are you sure you want to delete this notebook? This action cannot be undone.")
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())

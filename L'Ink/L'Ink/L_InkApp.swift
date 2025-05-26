@@ -3,16 +3,15 @@ import FirebaseCore
 import FirebaseStorage
 
 class AppDelegate: NSObject, UIApplicationDelegate {
-  func application(_ application: UIApplication,
-                   didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
-    FirebaseApp.configure()
-    return true
-  }
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        FirebaseApp.configure()
+        return true
+    }
 }
 
 @main
 struct LInkApp: App {
-    
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var authViewModel = AuthViewModel()
     @StateObject private var appConfig = AppConfig.shared
@@ -20,29 +19,14 @@ struct LInkApp: App {
 
     var body: some Scene {
         WindowGroup {
-            NavigationView {
-                ContentView()
-                    .environmentObject(authViewModel)
-                    .environmentObject(appConfig)
-                    .preferredColorScheme(.light)
-                    .onAppear {
-                        // Optimize initial rendering
-                        DispatchQueue.main.async {
-                            appConfig.initialize()
-                        }
-                    }
-            }
+            ContentView()
+                .environmentObject(authViewModel)
+                .environmentObject(appConfig)
+                .preferredColorScheme(.light)
         }
-        .onChange(of: scenePhase) { oldPhase, newPhase in
-            switch newPhase {
-            case .active:
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
                 appConfig.syncMetadata()
-            case .inactive:
-                break
-            case .background:
-                break
-            @unknown default:
-                break
             }
         }
     }

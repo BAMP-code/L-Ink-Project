@@ -10,6 +10,11 @@
 		B6B4F80F2DD985870041A67A /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = B6B4F80E2DD985870041A67A /* FirebaseAuth */; };
 		B6B4F8112DD985870041A67A /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = B6B4F8102DD985870041A67A /* FirebaseFirestore */; };
 		B6B4F82A2DE2FD6D0041A67A /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = B6B4F8292DE2FD6D0041A67A /* FirebaseStorage */; };
+		ECB998612DE42E95000A9C75 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = ECB998602DE42E95000A9C75 /* FirebaseAnalytics */; };
+		ECB998632DE42E95000A9C75 /* FirebaseAnalyticsOnDeviceConversion in Frameworks */ = {isa = PBXBuildFile; productRef = ECB998622DE42E95000A9C75 /* FirebaseAnalyticsOnDeviceConversion */; };
+		ECB998652DE42E95000A9C75 /* FirebaseAnalyticsWithoutAdIdSupport in Frameworks */ = {isa = PBXBuildFile; productRef = ECB998642DE42E95000A9C75 /* FirebaseAnalyticsWithoutAdIdSupport */; };
+		ECB998672DE42E95000A9C75 /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = ECB998662DE42E95000A9C75 /* FirebaseAppCheck */; };
+		ECB998692DE42E95000A9C75 /* FirebaseAppDistribution-Beta in Frameworks */ = {isa = PBXBuildFile; productRef = ECB998682DE42E95000A9C75 /* FirebaseAppDistribution-Beta */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -35,9 +40,30 @@
 		61944E492DC069C200027300 /* L'InkUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "L'InkUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		ECB9985E2DE42E55000A9C75 /* Exceptions for "L'Ink" folder in "L'InkTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"GoogleService-Info 2.plist",
+			);
+			target = 61944E3E2DC069C200027300 /* L'InkTests */;
+		};
+		ECB9985F2DE42E55000A9C75 /* Exceptions for "L'Ink" folder in "L'InkUITests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"GoogleService-Info 2.plist",
+			);
+			target = 61944E482DC069C200027300 /* L'InkUITests */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		61944E312DC069C100027300 /* L'Ink */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				ECB9985E2DE42E55000A9C75 /* Exceptions for "L'Ink" folder in "L'InkTests" target */,
+				ECB9985F2DE42E55000A9C75 /* Exceptions for "L'Ink" folder in "L'InkUITests" target */,
+			);
 			path = "L'Ink";
 			sourceTree = "<group>";
 		};
@@ -59,8 +85,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				B6B4F80F2DD985870041A67A /* FirebaseAuth in Frameworks */,
+				ECB998652DE42E95000A9C75 /* FirebaseAnalyticsWithoutAdIdSupport in Frameworks */,
 				B6B4F8112DD985870041A67A /* FirebaseFirestore in Frameworks */,
+				ECB998632DE42E95000A9C75 /* FirebaseAnalyticsOnDeviceConversion in Frameworks */,
+				ECB998672DE42E95000A9C75 /* FirebaseAppCheck in Frameworks */,
+				ECB998612DE42E95000A9C75 /* FirebaseAnalytics in Frameworks */,
 				B6B4F82A2DE2FD6D0041A67A /* FirebaseStorage in Frameworks */,
+				ECB998692DE42E95000A9C75 /* FirebaseAppDistribution-Beta in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -124,6 +155,11 @@
 				B6B4F80E2DD985870041A67A /* FirebaseAuth */,
 				B6B4F8102DD985870041A67A /* FirebaseFirestore */,
 				B6B4F8292DE2FD6D0041A67A /* FirebaseStorage */,
+				ECB998602DE42E95000A9C75 /* FirebaseAnalytics */,
+				ECB998622DE42E95000A9C75 /* FirebaseAnalyticsOnDeviceConversion */,
+				ECB998642DE42E95000A9C75 /* FirebaseAnalyticsWithoutAdIdSupport */,
+				ECB998662DE42E95000A9C75 /* FirebaseAppCheck */,
+				ECB998682DE42E95000A9C75 /* FirebaseAppDistribution-Beta */,
 			);
 			productName = "L'Ink";
 			productReference = 61944E2F2DC069C100027300 /* L'Ink.app */;
@@ -593,6 +629,31 @@
 		B6B4F8292DE2FD6D0041A67A /* FirebaseStorage */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = FirebaseStorage;
+		};
+		ECB998602DE42E95000A9C75 /* FirebaseAnalytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B6B4F80D2DD985870041A67A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalytics;
+		};
+		ECB998622DE42E95000A9C75 /* FirebaseAnalyticsOnDeviceConversion */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B6B4F80D2DD985870041A67A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalyticsOnDeviceConversion;
+		};
+		ECB998642DE42E95000A9C75 /* FirebaseAnalyticsWithoutAdIdSupport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B6B4F80D2DD985870041A67A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalyticsWithoutAdIdSupport;
+		};
+		ECB998662DE42E95000A9C75 /* FirebaseAppCheck */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B6B4F80D2DD985870041A67A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAppCheck;
+		};
+		ECB998682DE42E95000A9C75 /* FirebaseAppDistribution-Beta */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B6B4F80D2DD985870041A67A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = "FirebaseAppDistribution-Beta";
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

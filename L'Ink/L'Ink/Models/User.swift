@@ -10,7 +10,7 @@ struct AppUser: Identifiable, Codable {
     var bio: String?
     var createdAt: Date
     var updatedAt: Date
-    
+
     init(id: String = UUID().uuidString,
          username: String,
          email: String,
@@ -28,8 +28,7 @@ struct AppUser: Identifiable, Codable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
-    
-    // Firestore document conversion
+
     var dictionary: [String: Any] {
         return [
             "id": id,
@@ -42,7 +41,7 @@ struct AppUser: Identifiable, Codable {
             "updatedAt": Timestamp(date: updatedAt)
         ]
     }
-    
+
     static func fromDictionary(_ dict: [String: Any]) -> AppUser? {
         guard let id = dict["id"] as? String,
               let username = dict["username"] as? String,
@@ -51,20 +50,16 @@ struct AppUser: Identifiable, Codable {
               let updatedAt = (dict["updatedAt"] as? Timestamp)?.dateValue() else {
             return nil
         }
-        
-        let profileImageURL = dict["profileImageURL"] as? String
-        let headerImageURL = dict["headerImageURL"] as? String
-        let bio = dict["bio"] as? String
-        
+
         return AppUser(
             id: id,
             username: username,
             email: email,
-            profileImageURL: profileImageURL,
-            headerImageURL: headerImageURL,
-            bio: bio,
+            profileImageURL: dict["profileImageURL"] as? String,
+            headerImageURL: dict["headerImageURL"] as? String,
+            bio: dict["bio"] as? String,
             createdAt: createdAt,
             updatedAt: updatedAt
         )
     }
-} 
+}

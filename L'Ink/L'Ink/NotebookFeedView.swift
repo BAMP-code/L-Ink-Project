@@ -45,8 +45,12 @@ class FeedViewModel: ObservableObject {
     // User interaction history
     private var userInteractionHistory: [String: [Date]] = [:] // notebookId: [interaction timestamps]
     private var userPreferences: Set<String> = [] // tags user has shown interest in
+    private let recommendationEngine = RecommendationEngine()
+    private let currentUserId: String // In a real app, this would come from authentication
     
     init() {
+        // In a real app, this would come from authentication
+        self.currentUserId = UUID().uuidString
         loadMockData()
         calculateRankingScores()
     }
@@ -160,11 +164,18 @@ class FeedViewModel: ObservableObject {
             // Quality score
             let qualityScore = calculateQualityScore(notebook)
             
+            // ML-based recommendation score
+            let recommendationScore = recommendationEngine.getPredictedScore(
+                userId: currentUserId,
+                notebookId: notebook.id.uuidString
+            )
+            
             // Combine all factors into final ranking score
             let finalScore = (
-                0.4 * engagementScore +
-                0.3 * userRelevanceScore +
-                0.2 * qualityScore
+                0.3 * engagementScore +
+                0.2 * userRelevanceScore +
+                0.2 * qualityScore +
+                0.3 * recommendationScore // Add ML-based score
             ) * timeDecay
             
             notebooks[i].rankingScore = finalScore
@@ -243,6 +254,17 @@ class FeedViewModel: ObservableObject {
         // Update user preferences based on interaction
         if let notebook = notebooks.first(where: { $0.id.uuidString == notebookId }) {
             userPreferences.formUnion(notebook.tags)
+            
+            // Add interaction to recommendation engine
+            let value = normalizeInteractionValue(type: interactionType)
+            let interaction = UserInteraction(
+                userId: currentUserId,
+                notebookId: notebookId,
+                interactionType: InteractionType(rawValue: interactionType) ?? .view,
+                timestamp: now,
+                value: value
+            )
+            recommendationEngine.addInteraction(interaction)
         }
         
         // Recalculate ranking scores
@@ -254,6 +276,18 @@ class FeedViewModel: ObservableObject {
         if let index = notebooks.firstIndex(where: { $0.id.uuidString == notebookId }) {
             notebooks[index].viewCount += 1
             notebooks[index].timeSpentSeconds += timeSpentSeconds
+            
+            // Add view interaction to recommendation engine
+            let normalizedTimeSpent = min(1.0, Double(timeSpentSeconds) / 300.0) // Normalize to 0-1 range (max 5 minutes)
+            let interaction = UserInteraction(
+                userId: currentUserId,
+                notebookId: notebookId,
+                interactionType: .timeSpent,
+                timestamp: Date(),
+                value: normalizedTimeSpent
+            )
+            recommendationEngine.addInteraction(interaction)
+            
             calculateRankingScores()
         }
     }
@@ -296,6 +330,24 @@ class FeedViewModel: ObservableObject {
             )
             notebooks[index].comments.append(newComment)
             trackInteraction(notebookId: notebook.id.uuidString, interactionType: "comment")
+        }
+    }
+    
+    // Helper function to normalize interaction values
+    private func normalizeInteractionValue(type: String) -> Double {
+        switch type {
+        case "like":
+            return 0.8
+        case "comment":
+            return 1.0
+        case "save":
+            return 0.9
+        case "share":
+            return 0.7
+        case "view":
+            return 0.3
+        default:
+            return 0.1
         }
     }
 }

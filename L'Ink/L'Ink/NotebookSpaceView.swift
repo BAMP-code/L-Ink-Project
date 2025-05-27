@@ -169,7 +169,7 @@ struct NotebookSpaceView: View {
         switch index {
         case 0: return "My Notebooks"
         case 1: return "Shared"
-        case 2: return "Pinned"
+        case 2: return "Favorite"
         default: return ""
         }
     }
@@ -187,7 +187,7 @@ struct NotebookSpaceView: View {
         switch selectedSection {
         case 0: return "No notebooks yet"
         case 1: return "No shared notebooks"
-        case 2: return "No pinned notebooks"
+        case 2: return "No favorite notebooks"
         default: return "No notebooks"
         }
     }
@@ -196,7 +196,7 @@ struct NotebookSpaceView: View {
         switch selectedSection {
         case 0: return "Create your first notebook to get started"
         case 1: return "Notebooks shared with you will appear here"
-        case 2: return "Pin your favorite notebooks to access them quickly"
+        case 2: return "Favorite notebooks to access them quickly"
         default: return ""
         }
     }
@@ -207,6 +207,8 @@ struct NotebookCard: View {
     let index: Int
     let totalCount: Int
     let scrollOffset: CGFloat
+    @State private var showOptions = false
+    @State private var navigate = false
     
     private var gradientColors: [Color] {
         let colors: [[Color]] = [
@@ -222,7 +224,11 @@ struct NotebookCard: View {
     }
     
     var body: some View {
-        NavigationLink(destination: NotebookDetailView(notebook: notebook)) {
+        ZStack {
+            // Invisible NavigationLink triggered by state
+            NavigationLink(destination: NotebookDetailView(notebook: notebook), isActive: $navigate) {
+                EmptyView()
+            }.hidden()
             // Main notebook container
             HStack(spacing: 0) {
                 // Spine
@@ -304,6 +310,23 @@ struct NotebookCard: View {
             .frame(width: 360, height: 400)
             .cornerRadius(8)
             .shadow(color: .black.opacity(0.2), radius: 5, x: 0, y: 2)
+            .onTapGesture {
+                navigate = true
+            }
+            .simultaneousGesture(LongPressGesture().onEnded { _ in
+                showOptions = true
+            })
+            .actionSheet(isPresented: $showOptions) {
+                ActionSheet(title: Text("Notebook Options"), buttons: [
+                    .default(Text("Share Notebook")) {
+                        // Share functionality here
+                    },
+                    .destructive(Text("Delete Notebook")) {
+                        // Delete functionality here
+                    },
+                    .cancel()
+                ])
+            }
         }
     }
 }

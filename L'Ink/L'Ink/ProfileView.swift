@@ -20,7 +20,7 @@ class ProfileImageViewModel: ObservableObject {
     func handleHeaderImageSelection(_ item: PhotosPickerItem) async {
         guard let data = try? await item.loadTransferable(type: Data.self),
               let image = UIImage(data: data) else { return }
-        print("📸 Header image selected")
+        print("Header image selected")
         headerImage = image
         await uploadHeaderImage(image)
     }
@@ -35,7 +35,7 @@ class ProfileImageViewModel: ObservableObject {
     
     private func uploadHeaderImage(_ image: UIImage) async {
         guard let userId = authViewModel.currentUser?.id else { 
-            print("❌ Error: No user ID found")
+            print("Error: No user ID found")
             return 
         }
         print("📸 Starting header image upload for user: \(userId)")

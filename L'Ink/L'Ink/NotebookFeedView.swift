@@ -22,6 +22,13 @@ struct PublicNotebook: Identifiable {
     var isLiked: Bool = false
     var isSaved: Bool = false
     let prompts: [String]
+    
+    // Ranking score properties
+    var viewCount: Int = 0
+    var saveCount: Int = 0
+    var shareCount: Int = 0
+    var timeSpentSeconds: Int = 0
+    var rankingScore: Double = 0.0
 }
 
 struct NotebookComment: Identifiable {
@@ -35,8 +42,17 @@ class FeedViewModel: ObservableObject {
     @Published var notebooks: [PublicNotebook] = []
     @Published var searchText: String = ""
     
+    // User interaction history
+    private var userInteractionHistory: [String: [Date]] = [:] // notebookId: [interaction timestamps]
+    private var userPreferences: Set<String> = [] // tags user has shown interest in
+    private let recommendationEngine = RecommendationEngine()
+    private let currentUserId: String // In a real app, this would come from authentication
+    
     init() {
+        // In a real app, this would come from authentication
+        self.currentUserId = UUID().uuidString
         loadMockData()
+        calculateRankingScores()
     }
     
     func loadMockData() {
@@ -128,19 +144,183 @@ class FeedViewModel: ObservableObject {
         ]
     }
     
+    // Calculate ranking scores for all notebooks
+    private func calculateRankingScores() {
+        let now = Date()
+        
+        for i in 0..<notebooks.count {
+            let notebook = notebooks[i]
+            
+            // Time decay factor (posts get less relevant as they age)
+            let ageInHours = now.timeIntervalSince(notebook.timestamp) / 3600
+            let timeDecay = 1.0 / (1.0 + log(max(ageInHours, 1)))
+            
+            // Engagement score
+            let engagementScore = calculateEngagementScore(notebook)
+            
+            // User relevance score
+            let userRelevanceScore = calculateUserRelevanceScore(notebook)
+            
+            // Quality score
+            let qualityScore = calculateQualityScore(notebook)
+            
+            // ML-based recommendation score
+            let recommendationScore = recommendationEngine.getPredictedScore(
+                userId: currentUserId,
+                notebookId: notebook.id.uuidString
+            )
+            
+            // Combine all factors into final ranking score
+            let finalScore = (
+                0.3 * engagementScore +
+                0.2 * userRelevanceScore +
+                0.2 * qualityScore +
+                0.3 * recommendationScore // Add ML-based score
+            ) * timeDecay
+            
+            notebooks[i].rankingScore = finalScore
+        }
+        
+        // Sort notebooks by ranking score
+        notebooks.sort { $0.rankingScore > $1.rankingScore }
+    }
+    
+    // Calculate engagement score based on user interactions
+    private func calculateEngagementScore(_ notebook: PublicNotebook) -> Double {
+        let viewWeight = 1.0
+        let likeWeight = 2.0
+        let commentWeight = 3.0
+        let saveWeight = 4.0
+        let shareWeight = 2.5
+        let timeSpentWeight = 0.001 // per second
+        
+        let viewScore = Double(notebook.viewCount) * viewWeight
+        let likeScore = Double(notebook.likes) * likeWeight
+        let commentScore = Double(notebook.comments.count) * commentWeight
+        let saveScore = Double(notebook.saveCount) * saveWeight
+        let shareScore = Double(notebook.shareCount) * shareWeight
+        let timeSpentScore = Double(notebook.timeSpentSeconds) * timeSpentWeight
+        
+        let totalScore = viewScore + likeScore + commentScore + saveScore + shareScore + timeSpentScore
+        let normalizedScore = min(1.0, totalScore / 1000.0) // Normalize to 0-1 range
+        
+        return normalizedScore
+    }
+    
+    // Calculate relevance score based on user preferences
+    private func calculateUserRelevanceScore(_ notebook: PublicNotebook) -> Double {
+        var score = 0.0
+        
+        // Check if user has interacted with similar content
+        let matchingTags = Set(notebook.tags).intersection(userPreferences)
+        score += Double(matchingTags.count) * 0.2
+        
+        // Check recency and frequency of interactions with this notebook
+        if let interactions = userInteractionHistory[notebook.id.uuidString] {
+            let now = Date()
+            for interaction in interactions {
+                let hoursAgo = now.timeIntervalSince(interaction) / 3600
+                if hoursAgo < 24 {
+                    score += 0.1 * (24 - hoursAgo) / 24
+                }
+            }
+        }
+        
+        return min(1.0, score)
+    }
+    
+    // Calculate quality score based on content attributes
+    private func calculateQualityScore(_ notebook: PublicNotebook) -> Double {
+        var score = 0.0
+        
+        // Content length/depth score
+        score += min(1.0, Double(notebook.pageCount) / 20.0) * 0.4
+        
+        // Description quality score
+        let descriptionWords = notebook.description.split(separator: " ").count
+        score += min(1.0, Double(descriptionWords) / 30.0) * 0.3
+        
+        // Prompts quality score
+        score += min(1.0, Double(notebook.prompts.count) / 5.0) * 0.3
+        
+        return score
+    }
+    
+    // Track user interaction with a notebook
+    func trackInteraction(notebookId: String, interactionType: String) {
+        let now = Date()
+        userInteractionHistory[notebookId, default: []].append(now)
+        
+        // Update user preferences based on interaction
+        if let notebook = notebooks.first(where: { $0.id.uuidString == notebookId }) {
+            userPreferences.formUnion(notebook.tags)
+            
+            // Add interaction to recommendation engine
+            let value = normalizeInteractionValue(type: interactionType)
+            let interaction = UserInteraction(
+                userId: currentUserId,
+                notebookId: notebookId,
+                interactionType: InteractionType(rawValue: interactionType) ?? .view,
+                timestamp: now,
+                value: value
+            )
+            recommendationEngine.addInteraction(interaction)
+        }
+        
+        // Recalculate ranking scores
+        calculateRankingScores()
+    }
+    
+    // Update view count and time spent
+    func updateViewMetrics(notebookId: String, timeSpentSeconds: Int) {
+        if let index = notebooks.firstIndex(where: { $0.id.uuidString == notebookId }) {
+            notebooks[index].viewCount += 1
+            notebooks[index].timeSpentSeconds += timeSpentSeconds
+            
+            // Add view interaction to recommendation engine
+            let normalizedTimeSpent = min(1.0, Double(timeSpentSeconds) / 300.0) // Normalize to 0-1 range (max 5 minutes)
+            let interaction = UserInteraction(
+                userId: currentUserId,
+                notebookId: notebookId,
+                interactionType: .timeSpent,
+                timestamp: Date(),
+                value: normalizedTimeSpent
+            )
+            recommendationEngine.addInteraction(interaction)
+            
+            calculateRankingScores()
+        }
+    }
+    
+    // Update share count
+    func incrementShareCount(for notebook: PublicNotebook) {
+        if let index = notebooks.firstIndex(where: { $0.id == notebook.id }) {
+            notebooks[index].shareCount += 1
+            calculateRankingScores()
+        }
+    }
+    
+    // Override existing toggleSave to update save count
+    func toggleSave(for notebook: PublicNotebook) {
+        if let index = notebooks.firstIndex(where: { $0.id == notebook.id }) {
+            notebooks[index].isSaved.toggle()
+            if notebooks[index].isSaved {
+                notebooks[index].saveCount += 1
+            }
+            trackInteraction(notebookId: notebook.id.uuidString, interactionType: "save")
+        }
+    }
+    
+    // Override existing toggleLike to track interaction
     func toggleLike(for notebook: PublicNotebook) {
         if let index = notebooks.firstIndex(where: { $0.id == notebook.id }) {
             notebooks[index].isLiked.toggle()
             notebooks[index].likes += notebooks[index].isLiked ? 1 : -1
+            trackInteraction(notebookId: notebook.id.uuidString, interactionType: "like")
         }
     }
     
-    func toggleSave(for notebook: PublicNotebook) {
-        if let index = notebooks.firstIndex(where: { $0.id == notebook.id }) {
-            notebooks[index].isSaved.toggle()
-        }
-    }
-    
+    // Override existing addComment to track interaction
     func addComment(_ comment: String, to notebook: PublicNotebook) {
         if let index = notebooks.firstIndex(where: { $0.id == notebook.id }) {
             let newComment = NotebookComment(
@@ -149,6 +329,25 @@ class FeedViewModel: ObservableObject {
                 timestamp: Date()
             )
             notebooks[index].comments.append(newComment)
+            trackInteraction(notebookId: notebook.id.uuidString, interactionType: "comment")
+        }
+    }
+    
+    // Helper function to normalize interaction values
+    private func normalizeInteractionValue(type: String) -> Double {
+        switch type {
+        case "like":
+            return 0.8
+        case "comment":
+            return 1.0
+        case "save":
+            return 0.9
+        case "share":
+            return 0.7
+        case "view":
+            return 0.3
+        default:
+            return 0.1
         }
     }
 }
@@ -340,7 +539,8 @@ struct PublicNotebookView: View {
     @ObservedObject var viewModel: FeedViewModel
     @State private var showingComments = false
     @State private var newComment = ""
-
+    @State private var viewStartTime: Date? = nil
+    
     var body: some View {
         NavigationLink(destination: PublicNotebookDetailView(notebook: notebook)) {
             VStack(alignment: .leading, spacing: 8) {
@@ -387,7 +587,10 @@ struct PublicNotebookView: View {
                         Image(systemName: "message")
                     }
                     
-                    Button(action: {}) {
+                    Button(action: {
+                        viewModel.incrementShareCount(for: notebook)
+                        // Add your share sheet implementation here
+                    }) {
                         Image(systemName: "square.and.arrow.up")
                     }
                     
@@ -451,6 +654,15 @@ struct PublicNotebookView: View {
         .buttonStyle(PlainButtonStyle())
         .sheet(isPresented: $showingComments) {
             NotebookCommentsView(notebook: notebook, viewModel: viewModel)
+        }
+        .onAppear {
+            viewStartTime = Date()
+        }
+        .onDisappear {
+            if let startTime = viewStartTime {
+                let timeSpent = Int(Date().timeIntervalSince(startTime))
+                viewModel.updateViewMetrics(notebookId: notebook.id.uuidString, timeSpentSeconds: timeSpent)
+            }
         }
     }
 }

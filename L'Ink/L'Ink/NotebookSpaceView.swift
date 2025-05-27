@@ -17,7 +17,7 @@ struct SectionHeaderView: View {
                     VStack(spacing: 4) {
                         Text(sectionTitle(for: index))
                             .font(.system(size: 16, weight: selectedSection == index ? .semibold : .regular))
-                            .foregroundColor(selectedSection == index ? .black : .gray)
+                            .foregroundColor(selectedSection == index ? .primary : .gray)
                         
                         Rectangle()
                             .fill(selectedSection == index ? Color.black : Color.clear)
@@ -120,7 +120,7 @@ struct EmptyStateView: View {
         switch section {
         case 0: return "book.closed"
         case 1: return "person.2"
-        case 2: return "pin"
+        case 2: return "heart"
         default: return "book.closed"
         }
     }

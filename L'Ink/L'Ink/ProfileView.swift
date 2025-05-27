@@ -427,6 +427,7 @@ struct SettingsView: View {
     @Environment(\.presentationMode) var presentationMode
     @AppStorage("isDarkMode") private var isDarkMode = false
     @AppStorage("notificationsEnabled") private var notificationsEnabled = true
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         NavigationView {
@@ -465,6 +466,7 @@ struct SettingsView: View {
             .navigationBarItems(trailing: Button("Done") {
                 presentationMode.wrappedValue.dismiss()
             })
+            .preferredColorScheme(isDarkMode ? .dark : .light)
         }
     }
 }

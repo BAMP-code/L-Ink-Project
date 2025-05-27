@@ -16,13 +16,14 @@ struct LInkApp: App {
     @StateObject private var authViewModel = AuthViewModel()
     @StateObject private var appConfig = AppConfig.shared
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("isDarkMode") private var isDarkMode = false
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(authViewModel)
                 .environmentObject(appConfig)
-                .preferredColorScheme(.light)
+                .preferredColorScheme(isDarkMode ? .dark : .light)
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {

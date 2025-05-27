@@ -22,6 +22,7 @@ struct Notebook: Identifiable, Codable {
     var ownerId: String
     var isPublic: Bool
     var isPinned: Bool
+    var isFavorite: Bool
     var createdAt: Date
     var updatedAt: Date
     var pages: [Page]
@@ -33,6 +34,7 @@ struct Notebook: Identifiable, Codable {
          ownerId: String,
          isPublic: Bool = false,
          isPinned: Bool = false,
+         isFavorite: Bool = false,
          createdAt: Date = Date(),
          updatedAt: Date = Date(),
          pages: [Page] = [],
@@ -43,6 +45,7 @@ struct Notebook: Identifiable, Codable {
         self.ownerId = ownerId
         self.isPublic = isPublic
         self.isPinned = isPinned
+        self.isFavorite = isFavorite
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.pages = pages
@@ -58,6 +61,7 @@ struct Notebook: Identifiable, Codable {
             "ownerId": ownerId,
             "isPublic": isPublic,
             "isPinned": isPinned,
+            "isFavorite": isFavorite,
             "createdAt": Timestamp(date: createdAt),
             "updatedAt": Timestamp(date: updatedAt),
             "lastViewedPageIndex": lastViewedPageIndex,
@@ -80,6 +84,7 @@ struct Notebook: Identifiable, Codable {
               let ownerId = dict["ownerId"] as? String,
               let isPublic = dict["isPublic"] as? Bool,
               let isPinned = dict["isPinned"] as? Bool,
+              let isFavorite = dict["isFavorite"] as? Bool,
               let createdAt = (dict["createdAt"] as? Timestamp)?.dateValue(),
               let updatedAt = (dict["updatedAt"] as? Timestamp)?.dateValue() else {
             return nil
@@ -115,6 +120,7 @@ struct Notebook: Identifiable, Codable {
             ownerId: ownerId,
             isPublic: isPublic,
             isPinned: isPinned,
+            isFavorite: isFavorite,
             createdAt: createdAt,
             updatedAt: updatedAt,
             pages: pages,

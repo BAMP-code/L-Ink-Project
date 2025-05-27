@@ -16,7 +16,7 @@ class AuthViewModel: ObservableObject {
     }
     
     private func listenToAuthState() {
-        Auth.auth().addStateDidChangeListener { [weak self] _, user in
+        let _ = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             guard let self = self else { return }
             if let user = user {
                 self.fetchUser(uid: user.uid)

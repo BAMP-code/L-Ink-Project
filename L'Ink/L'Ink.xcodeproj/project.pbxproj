@@ -40,30 +40,9 @@
 		61944E492DC069C200027300 /* L'InkUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "L'InkUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		ECB9985E2DE42E55000A9C75 /* Exceptions for "L'Ink" folder in "L'InkTests" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				"GoogleService-Info 2.plist",
-			);
-			target = 61944E3E2DC069C200027300 /* L'InkTests */;
-		};
-		ECB9985F2DE42E55000A9C75 /* Exceptions for "L'Ink" folder in "L'InkUITests" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				"GoogleService-Info 2.plist",
-			);
-			target = 61944E482DC069C200027300 /* L'InkUITests */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		61944E312DC069C100027300 /* L'Ink */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				ECB9985E2DE42E55000A9C75 /* Exceptions for "L'Ink" folder in "L'InkTests" target */,
-				ECB9985F2DE42E55000A9C75 /* Exceptions for "L'Ink" folder in "L'InkUITests" target */,
-			);
 			path = "L'Ink";
 			sourceTree = "<group>";
 		};

@@ -53,6 +53,7 @@ class NotebookViewModel: ObservableObject {
             ownerId: testUserId,
             isPublic: false,
             isPinned: false,
+            isFavorite: false,
             pages: [
                 Page(
                     id: UUID().uuidString,
@@ -78,7 +79,8 @@ class NotebookViewModel: ObservableObject {
             description: description,
             ownerId: testUserId,
             isPublic: isPublic,
-            isPinned: false
+            isPinned: false,
+            isFavorite: false
         )
         
         db.collection("notebooks").document(notebook.id).setData(notebook.dictionary) { error in
@@ -107,6 +109,12 @@ class NotebookViewModel: ObservableObject {
     func togglePin(_ notebook: Notebook) {
         var updatedNotebook = notebook
         updatedNotebook.isPinned.toggle()
+        updateNotebook(updatedNotebook)
+    }
+    
+    func toggleFavorite(_ notebook: Notebook) {
+        var updatedNotebook = notebook
+        updatedNotebook.isFavorite.toggle()
         updateNotebook(updatedNotebook)
     }
     

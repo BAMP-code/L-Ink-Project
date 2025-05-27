@@ -101,11 +101,6 @@ struct ProfileView: View {
     }
     
     // Sample data
-    let savedNotebooks: [String: [String]] = [
-        "Travel": ["Japan 2023", "Italy Adventure"],
-        "Recipes": ["Vegan Delights", "Quick Meals"]
-    ]
-    let collections: [String] = ["Favorites", "Work", "Personal"]
     let likedNotebooks: [String] = ["Art Portfolio 2024", "Math Notes"]
     let featuredScrapbooks: [String] = ["My Best Scrapbook"]
     let badges: [String] = ["Creative Star", "Consistent Contributor", "Community Helper"]
@@ -294,38 +289,6 @@ struct ProfileView: View {
                                             .font(.caption)
                                     }
                                     .padding(4)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-
-                    // Saved Notebooks by Tag/Collection
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Saved Notebooks")
-                            .font(.headline)
-                        ForEach(savedNotebooks.keys.sorted(), id: \.self) { tag in
-                            VStack(alignment: .leading) {
-                                Text(tag)
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack {
-                                        ForEach(savedNotebooks[tag]!, id: \.self) { notebook in
-                                            NotebookCardView(title: notebook)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        // Collections
-                        Text("Collections")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack {
-                                ForEach(collections, id: \.self) { collection in
-                                    NotebookCardView(title: collection)
                                 }
                             }
                         }

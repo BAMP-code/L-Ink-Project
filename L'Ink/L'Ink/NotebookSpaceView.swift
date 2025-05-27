@@ -197,52 +197,40 @@ struct NotebookScrollView: View {
     @Binding var scrollOffset: CGFloat
     let onDelete: (Notebook) -> Void
     
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            GeometryReader { geometry in
-                Color.clear.preference(key: ScrollOffsetPreferenceKey.self,
-                    value: geometry.frame(in: .named("scroll")).minX)
-            }
-            .frame(width: 0, height: 0)
-            
-            HStack(spacing: 20) {
-                ForEach(Array(notebooks.enumerated()), id: \.element.id) { index, notebook in
-                    if isEditMode {
-                        NotebookCard(notebook: notebook, index: index, totalCount: notebooks.count, scrollOffset: scrollOffset)
-                            .overlay(
-                                Button(action: {
-                                    onDelete(notebook)
-                                }) {
-                                    Image(systemName: "minus.circle.fill")
-                                        .font(.system(size: 30))
-                                        .foregroundColor(.red)
-                                        .background(Color.white)
-                                        .clipShape(Circle())
-                                }
-                                .padding(8),
-                                alignment: .top
-                            )
-                    } else {
-                        NavigationLink(destination: NotebookDetailView(notebook: notebook)) {
-                            NotebookCard(notebook: notebook, index: index, totalCount: notebooks.count, scrollOffset: scrollOffset)
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 20)
-        }
-        .coordinateSpace(name: "scroll")
-        .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-            scrollOffset = value
+    private func sectionTitle(for index: Int) -> String {
+        switch index {
+        case 0: return "My Notebooks"
+        case 1: return "Shared"
+        case 2: return "Favorite"
+        default: return ""
         }
     }
-}
-
-struct ScrollOffsetPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+    
+    private var sectionEmptyIcon: String {
+        switch selectedSection {
+        case 0: return "book.closed"
+        case 1: return "person.2"
+        case 2: return "pin"
+        default: return "book.closed"
+        }
+    }
+    
+    private var sectionEmptyTitle: String {
+        switch selectedSection {
+        case 0: return "No notebooks yet"
+        case 1: return "No shared notebooks"
+        case 2: return "No favorite notebooks"
+        default: return "No notebooks"
+        }
+    }
+    
+    private var sectionEmptyMessage: String {
+        switch selectedSection {
+        case 0: return "Create your first notebook to get started"
+        case 1: return "Notebooks shared with you will appear here"
+        case 2: return "Favorite notebooks to access them quickly"
+        default: return ""
+        }
     }
 }
 
@@ -251,6 +239,8 @@ struct NotebookCard: View {
     let index: Int
     let totalCount: Int
     let scrollOffset: CGFloat
+    @State private var showOptions = false
+    @State private var navigate = false
     
     private var gradientColors: [Color] {
         let colors: [[Color]] = [
@@ -266,7 +256,11 @@ struct NotebookCard: View {
     }
     
     var body: some View {
-        NavigationLink(destination: NotebookDetailView(notebook: notebook)) {
+        ZStack {
+            // Invisible NavigationLink triggered by state
+            NavigationLink(destination: NotebookDetailView(notebook: notebook), isActive: $navigate) {
+                EmptyView()
+            }.hidden()
             // Main notebook container
             HStack(spacing: 0) {
                 // Spine
@@ -348,6 +342,23 @@ struct NotebookCard: View {
             .frame(width: 360, height: 400)
             .cornerRadius(8)
             .shadow(color: .black.opacity(0.2), radius: 5, x: 0, y: 2)
+            .onTapGesture {
+                navigate = true
+            }
+            .simultaneousGesture(LongPressGesture().onEnded { _ in
+                showOptions = true
+            })
+            .actionSheet(isPresented: $showOptions) {
+                ActionSheet(title: Text("Notebook Options"), buttons: [
+                    .default(Text("Share Notebook")) {
+                        // Share functionality here
+                    },
+                    .destructive(Text("Delete Notebook")) {
+                        // Delete functionality here
+                    },
+                    .cancel()
+                ])
+            }
         }
     }
 }

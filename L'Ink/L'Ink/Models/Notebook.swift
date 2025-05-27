@@ -2,6 +2,7 @@ import Foundation
 import FirebaseFirestore
 
 enum PageType: String, Codable {
+    case cover
     case text
     case ink
 }
@@ -13,6 +14,10 @@ struct Page: Identifiable, Codable {
     var createdAt: Date
     var updatedAt: Date
     var order: Int
+    // Persistent canvas state
+    var drawingData: Data?
+    var textBoxes: [CanvasTextBoxModel]?
+    var images: [CanvasImageModel]?
 }
 
 struct Notebook: Identifiable, Codable {
@@ -127,4 +132,24 @@ struct Notebook: Identifiable, Codable {
             lastViewedPageIndex: lastViewedPageIndex
         )
     }
+}
+
+// Add Codable models for text boxes and images if not already present
+struct CanvasTextBoxModel: Codable, Identifiable {
+    var id: UUID
+    var text: String
+    var position: CGPointCodable
+}
+
+struct CanvasImageModel: Codable, Identifiable {
+    var id: UUID
+    var imageData: Data
+    var position: CGPointCodable
+}
+
+struct CGPointCodable: Codable {
+    var x: CGFloat
+    var y: CGFloat
+    init(_ point: CGPoint) { x = point.x; y = point.y }
+    var cgPoint: CGPoint { CGPoint(x: x, y: y) }
 } 

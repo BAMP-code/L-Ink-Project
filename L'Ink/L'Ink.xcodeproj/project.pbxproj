@@ -44,14 +44,14 @@
 		ECB9985E2DE42E55000A9C75 /* Exceptions for "L'Ink" folder in "L'InkTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				"GoogleService-Info 2.plist",
+				"GoogleService-Info.plist",
 			);
 			target = 61944E3E2DC069C200027300 /* L'InkTests */;
 		};
 		ECB9985F2DE42E55000A9C75 /* Exceptions for "L'Ink" folder in "L'InkUITests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				"GoogleService-Info 2.plist",
+				"GoogleService-Info.plist",
 			);
 			target = 61944E482DC069C200027300 /* L'InkUITests */;
 		};

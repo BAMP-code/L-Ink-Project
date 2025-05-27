@@ -14,7 +14,7 @@ struct SectionHeaderView: View {
                         onSectionSelected(index)
                     }
                 }) {
-                    VStack(spacing: 8) {
+                    VStack(spacing: 4) {
                         Text(sectionTitle(for: index))
                             .font(.system(size: 16, weight: selectedSection == index ? .semibold : .regular))
                             .foregroundColor(selectedSection == index ? .black : .gray)
@@ -27,7 +27,6 @@ struct SectionHeaderView: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .padding(.top, 8)
     }
     
     private func sectionTitle(for index: Int) -> String {
@@ -37,6 +36,65 @@ struct SectionHeaderView: View {
         case 2: return "Favorites"
         default: return ""
         }
+    }
+}
+
+// MARK: - Notebook Scroll View
+struct NotebookScrollView: View {
+    let notebooks: [Notebook]
+    let isEditMode: Bool
+    @Binding var scrollOffset: CGFloat
+    let onDelete: (Notebook) -> Void
+    @Binding var showingNewNotebook: Bool
+    
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            GeometryReader { geometry in
+                Color.clear.preference(key: ScrollOffsetPreferenceKey.self,
+                    value: geometry.frame(in: .named("scroll")).minX)
+            }
+            .frame(width: 0, height: 0)
+            
+            HStack(spacing: 20) {
+                ForEach(Array(notebooks.enumerated()), id: \.element.id) { index, notebook in
+                    if isEditMode {
+                        NotebookCard(notebook: notebook, index: index, totalCount: notebooks.count, scrollOffset: scrollOffset)
+                            .overlay(
+                                Button(action: {
+                                    onDelete(notebook)
+                                }) {
+                                    Image(systemName: "minus.circle.fill")
+                                        .font(.system(size: 30))
+                                        .foregroundColor(.red)
+                                        .background(Color.white)
+                                        .clipShape(Circle())
+                                }
+                                .padding(8),
+                                alignment: .topTrailing
+                            )
+                    } else {
+                        NotebookCard(notebook: notebook, index: index, totalCount: notebooks.count, scrollOffset: scrollOffset)
+                    }
+                }
+                
+                if !isEditMode {
+                    CreateNotebookCard(showingNewNotebook: $showingNewNotebook)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 20)
+        }
+        .coordinateSpace(name: "scroll")
+        .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+            scrollOffset = value
+        }
+    }
+}
+
+struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
@@ -62,26 +120,26 @@ struct EmptyStateView: View {
         switch section {
         case 0: return "book.closed"
         case 1: return "person.2"
-        case 2: return "star"
+        case 2: return "pin"
         default: return "book.closed"
         }
     }
     
     private var sectionEmptyTitle: String {
         switch section {
-        case 0: return "No Notebooks"
-        case 1: return "No Shared Notebooks"
-        case 2: return "No Favorites"
-        default: return "No Notebooks"
+        case 0: return "No notebooks yet"
+        case 1: return "No shared notebooks"
+        case 2: return "No favorite notebooks"
+        default: return "No notebooks"
         }
     }
     
     private var sectionEmptyMessage: String {
         switch section {
         case 0: return "Create your first notebook to get started"
-        case 1: return "Shared notebooks will appear here"
-        case 2: return "Favorite notebooks will appear here"
-        default: return "Create your first notebook to get started"
+        case 1: return "Notebooks shared with you will appear here"
+        case 2: return "Favorite notebooks to access them quickly"
+        default: return ""
         }
     }
 }
@@ -119,34 +177,37 @@ struct NotebookSpaceView: View {
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 0) {
-                // Header Section
+            ZStack(alignment: .top) {
+                Color(.systemBackground)
+                    .edgesIgnoringSafeArea(.all)
+                
                 VStack(spacing: 0) {
+                    // Header Section
                     SectionHeaderView(selectedSection: selectedSection) { index in
                         selectedSection = index
                     }
                     
                     SearchBar(text: $searchText)
                         .padding(.horizontal)
-                        .padding(.vertical, 8)
-                }
-                .background(Color(.systemBackground))
-                
-                // Content Section
-                if filteredNotebooks.isEmpty {
-                    Spacer()
-                    EmptyStateView(section: selectedSection)
-                    Spacer()
-                } else {
-                    NotebookScrollView(
-                        notebooks: filteredNotebooks,
-                        isEditMode: isEditMode,
-                        scrollOffset: $scrollOffset,
-                        onDelete: { notebook in
-                            notebookToDelete = notebook
-                            showingDeleteAlert = true
-                        }
-                    )
+                        .padding(.vertical, 4)
+                    
+                    // Content Section
+                    if filteredNotebooks.isEmpty {
+                        Spacer()
+                        EmptyStateView(section: selectedSection)
+                        Spacer()
+                    } else {
+                        NotebookScrollView(
+                            notebooks: filteredNotebooks,
+                            isEditMode: isEditMode,
+                            scrollOffset: $scrollOffset,
+                            onDelete: { notebook in
+                                notebookToDelete = notebook
+                                showingDeleteAlert = true
+                            },
+                            showingNewNotebook: $showingNewNotebook
+                        )
+                    }
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -156,14 +217,6 @@ struct NotebookSpaceView: View {
                         isEditMode.toggle()
                     }) {
                         Text(isEditMode ? "Done" : "Edit")
-                    }
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        showingNewNotebook = true
-                    }) {
-                        Image(systemName: "plus")
                     }
                 }
             }
@@ -186,50 +239,6 @@ struct NotebookSpaceView: View {
         .navigationViewStyle(StackNavigationViewStyle())
         .onAppear {
             viewModel.fetchNotebooks()
-        }
-    }
-}
-
-// MARK: - Notebook Scroll View
-struct NotebookScrollView: View {
-    let notebooks: [Notebook]
-    let isEditMode: Bool
-    @Binding var scrollOffset: CGFloat
-    let onDelete: (Notebook) -> Void
-    
-    private func sectionTitle(for index: Int) -> String {
-        switch index {
-        case 0: return "My Notebooks"
-        case 1: return "Shared"
-        case 2: return "Favorite"
-        default: return ""
-        }
-    }
-    
-    private var sectionEmptyIcon: String {
-        switch selectedSection {
-        case 0: return "book.closed"
-        case 1: return "person.2"
-        case 2: return "pin"
-        default: return "book.closed"
-        }
-    }
-    
-    private var sectionEmptyTitle: String {
-        switch selectedSection {
-        case 0: return "No notebooks yet"
-        case 1: return "No shared notebooks"
-        case 2: return "No favorite notebooks"
-        default: return "No notebooks"
-        }
-    }
-    
-    private var sectionEmptyMessage: String {
-        switch selectedSection {
-        case 0: return "Create your first notebook to get started"
-        case 1: return "Notebooks shared with you will appear here"
-        case 2: return "Favorite notebooks to access them quickly"
-        default: return ""
         }
     }
 }

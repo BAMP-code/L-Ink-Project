@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import FirebaseFirestore
 
 struct PublicNotebook: Identifiable {
     let id = UUID()
@@ -48,100 +49,54 @@ class FeedViewModel: ObservableObject {
     private let recommendationEngine = RecommendationEngine()
     private let currentUserId: String // In a real app, this would come from authentication
     
+    private let db = Firestore.firestore()
+    
     init() {
         // In a real app, this would come from authentication
         self.currentUserId = UUID().uuidString
-        loadMockData()
+        fetchNotebooks()
         calculateRankingScores()
     }
     
     func loadMockData() {
-        notebooks = [
-            PublicNotebook(
-                title: "My Creative Writing Journey",
-                author: "john_doe",
-                authorImage: "person.circle.fill",
-                coverImage: "Logo",
-                description: "A collection of my creative writing pieces and poetry. Feel free to read and share your thoughts! #writing #poetry #creative",
-                tags: ["writing", "poetry", "creative"],
-                likes: 42,
-                comments: [
-                    NotebookComment(username: "jane_smith", text: "Your poetry is beautiful! Would love to see more.", timestamp: Date().addingTimeInterval(-3600)),
-                    NotebookComment(username: "alex_dev", text: "The structure is really well thought out.", timestamp: Date().addingTimeInterval(-7200))
-                ],
-                timestamp: Date().addingTimeInterval(-3600),
-                pageCount: 15,
-                prompts: [
-                    "What did you like most about this notebook?",
-                    "How would you use this in your own work?",
-                    "What would you add or change?"
-                ]
-            ),
-            PublicNotebook(
-                title: "Study Notes: Advanced Mathematics",
-                author: "jane_smith",
-                authorImage: "person.circle.fill",
-                coverImage: "Logo",
-                description: "Comprehensive notes covering calculus, linear algebra, and differential equations. Hope this helps other students! #math #study #education",
-                tags: ["math", "study", "education"],
-                likes: 28,
-                comments: [
-                    NotebookComment(username: "john_doe", text: "These notes are incredibly helpful! Thank you for sharing.", timestamp: Date().addingTimeInterval(-1800))
-                ],
-                timestamp: Date().addingTimeInterval(-7200),
-                pageCount: 45,
-                prompts: [
-                    "Which topic did you find most challenging?",
-                    "What would you like to see explained in more detail?"
-                ]
-            ),
-            PublicNotebook(
-                title: "Travel Journal: Japan",
-                author: "alex_dev",
-                authorImage: "person.circle.fill",
-                coverImage: "Logo",
-                description: "Photos, sketches, and stories from my trip to Japan. #travel #japan #adventure",
-                tags: ["travel", "japan", "adventure"],
-                likes: 67,
-                comments: [
-                    NotebookComment(username: "john_doe", text: "This makes me want to visit Japan!", timestamp: Date().addingTimeInterval(-5400)),
-                    NotebookComment(username: "sarah_wilson", text: "Beautiful photos!", timestamp: Date().addingTimeInterval(-6000))
-                ],
-                timestamp: Date().addingTimeInterval(-10800),
-                pageCount: 30,
-                prompts: []
-            ),
-            PublicNotebook(
-                title: "Recipe Book: Vegan Delights",
-                author: "sarah_wilson",
-                authorImage: "person.circle.fill",
-                coverImage: "Logo",
-                description: "A collection of my favorite vegan recipes. #vegan #cooking #recipes",
-                tags: ["vegan", "cooking", "recipes"],
-                likes: 53,
-                comments: [
-                    NotebookComment(username: "jane_smith", text: "Trying the lasagna tonight!", timestamp: Date().addingTimeInterval(-8000))
-                ],
-                timestamp: Date().addingTimeInterval(-14400),
-                pageCount: 22,
-                prompts: []
-            ),
-            PublicNotebook(
-                title: "Art Portfolio 2024",
-                author: "emma_artist",
-                authorImage: "person.circle.fill",
-                coverImage: "Logo",
-                description: "My latest digital and traditional artworks. #art #portfolio #digitalart",
-                tags: ["art", "portfolio", "digitalart"],
-                likes: 88,
-                comments: [
-                    NotebookComment(username: "alex_dev", text: "Your style is so unique!", timestamp: Date().addingTimeInterval(-10000))
-                ],
-                timestamp: Date().addingTimeInterval(-20000),
-                pageCount: 40,
-                prompts: []
-            )
-        ]
+        // This is now just a fallback in case of errors
+        notebooks = []
+    }
+    
+    private func fetchNotebooks() {
+        db.collection("notebooks")
+            .whereField("isPublic", isEqualTo: true)
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let documents = snapshot?.documents else {
+                    print("Error fetching notebooks: \(error?.localizedDescription ?? "Unknown error")")
+                    return
+                }
+                
+                self?.notebooks = documents.compactMap { document in
+                    let data = document.data()
+                    
+                    // Convert Firestore Timestamp to Date
+                    let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
+                    let updatedAt = (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
+                    
+                    // Extract pages array
+                    let pages = data["pages"] as? [[String: Any]] ?? []
+                    
+                    return PublicNotebook(
+                        title: data["title"] as? String ?? "",
+                        author: data["ownerId"] as? String ?? "",
+                        authorImage: "person.circle.fill",
+                        coverImage: "Logo",
+                        description: data["description"] as? String ?? "",
+                        tags: [], // We can extract tags from description later if needed
+                        likes: 0,  // These could be added to the database schema later
+                        comments: [],
+                        timestamp: createdAt,
+                        pageCount: pages.count,
+                        prompts: []
+                    )
+                }
+            }
     }
     
     // Calculate ranking scores for all notebooks

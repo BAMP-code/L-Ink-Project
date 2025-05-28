@@ -1,6 +1,12 @@
 import SwiftUI
 import FirebaseStorage
 import PhotosUI
+import Combine
+import FirebaseFirestore
+
+extension Notification.Name {
+    static let userDataUpdated = Notification.Name("userDataUpdated")
+}
 
 @MainActor
 class ProfileImageViewModel: ObservableObject {
@@ -8,13 +14,85 @@ class ProfileImageViewModel: ObservableObject {
     @Published var profileImage: UIImage?
     @Published var isUploading = false
     private var authViewModel: AuthViewModel
+    private var cancellables = Set<AnyCancellable>()
     
     init(authViewModel: AuthViewModel) {
         self.authViewModel = authViewModel
+        setupNotificationObserver()
+        loadImages()
+    }
+    
+    private func setupNotificationObserver() {
+        NotificationCenter.default.publisher(for: .userDataUpdated)
+            .sink { [weak self] _ in
+                self?.loadImages()
+            }
+            .store(in: &cancellables)
     }
     
     func updateAuthViewModel(_ newAuthViewModel: AuthViewModel) {
         self.authViewModel = newAuthViewModel
+        loadImages()
+    }
+    
+    private func loadImages() {
+        print("🔄 Starting to load images...")
+        
+        Task {
+            if let headerURL = authViewModel.currentUser?.headerImageURL {
+                print("📸 Found header URL: \(headerURL)")
+                if let url = URL(string: headerURL) {
+                    do {
+                        print("📥 Downloading header image...")
+                        let (data, response) = try await URLSession.shared.data(from: url)
+                        if let httpResponse = response as? HTTPURLResponse {
+                            print("📡 Header image response status: \(httpResponse.statusCode)")
+                        }
+                        if let image = UIImage(data: data) {
+                            print("✅ Header image loaded successfully")
+                            await MainActor.run {
+                                self.headerImage = image
+                            }
+                        } else {
+                            print("❌ Failed to create header image from data")
+                        }
+                    } catch {
+                        print("❌ Error loading header image: \(error)")
+                    }
+                } else {
+                    print("❌ Invalid header URL: \(headerURL)")
+                }
+            } else {
+                print("ℹ️ No header URL found")
+            }
+            
+            if let profileURL = authViewModel.currentUser?.profileImageURL {
+                print("📸 Found profile URL: \(profileURL)")
+                if let url = URL(string: profileURL) {
+                    do {
+                        print("📥 Downloading profile image...")
+                        let (data, response) = try await URLSession.shared.data(from: url)
+                        if let httpResponse = response as? HTTPURLResponse {
+                            print("📡 Profile image response status: \(httpResponse.statusCode)")
+                        }
+                        if let image = UIImage(data: data) {
+                            print("✅ Profile image loaded successfully")
+                            await MainActor.run {
+                                self.profileImage = image
+                            }
+                        } else {
+                            print("❌ Failed to create profile image from data")
+                        }
+                    } catch {
+                        print("❌ Error loading profile image: \(error)")
+                    }
+                } else {
+                    print("❌ Invalid profile URL: \(profileURL)")
+                }
+            } else {
+                print("ℹ️ No profile URL found")
+            }
+        }
     }
     
     func handleHeaderImageSelection(_ item: PhotosPickerItem) async {
@@ -88,164 +166,234 @@ class ProfileImageViewModel: ObservableObject {
     }
 }
 
+// MARK: - Header Image View
+struct HeaderImageView: View {
+    let headerImage: UIImage?
+    let headerURL: String?
+    
+    var body: some View {
+        Group {
+            if let headerImage = headerImage {
+                Image(uiImage: headerImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(height: 160)
+                    .clipped()
+                    .cornerRadius(16)
+                    .padding(.horizontal)
+            } else if let headerURL = headerURL {
+                AsyncImage(url: URL(string: headerURL)) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    Image("Logo")
+                        .resizable()
+                        .scaledToFill()
+                }
+                .frame(height: 160)
+                .clipped()
+                .cornerRadius(16)
+                .padding(.horizontal)
+            } else {
+                Image("Logo")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(height: 160)
+                    .clipped()
+                    .cornerRadius(16)
+                    .padding(.horizontal)
+            }
+        }
+    }
+}
+
+// MARK: - Profile Image View
+struct ProfileImageView: View {
+    let profileImage: UIImage?
+    let profileURL: String?
+    
+    var body: some View {
+        Group {
+            if let profileImage = profileImage {
+                Image(uiImage: profileImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 100, height: 100)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(Color.white, lineWidth: 4))
+                    .shadow(radius: 4)
+                    .offset(x: 32, y: 50)
+            } else if let profileURL = profileURL {
+                AsyncImage(url: URL(string: profileURL)) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    Image(systemName: "person.crop.circle.fill")
+                        .resizable()
+                        .scaledToFill()
+                }
+                .frame(width: 100, height: 100)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Color.white, lineWidth: 4))
+                .shadow(radius: 4)
+                .offset(x: 32, y: 50)
+            } else {
+                Image(systemName: "person.crop.circle.fill")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 100, height: 100)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(Color.white, lineWidth: 4))
+                    .shadow(radius: 4)
+                    .offset(x: 32, y: 50)
+            }
+        }
+    }
+}
+
+// MARK: - Profile Header Section
+struct ProfileHeaderSection: View {
+    @Binding var selectedHeaderItem: PhotosPickerItem?
+    @Binding var selectedProfileItem: PhotosPickerItem?
+    let headerImage: UIImage?
+    let headerURL: String?
+    let profileImage: UIImage?
+    let profileURL: String?
+    let onHeaderImageSelected: (PhotosPickerItem) async -> Void
+    let onProfileImageSelected: (PhotosPickerItem) async -> Void
+    
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            HeaderImageView(headerImage: headerImage, headerURL: headerURL)
+            
+            // Header image picker button
+            HStack {
+                Spacer()
+                VStack {
+                    Spacer()
+                    PhotosPicker(selection: $selectedHeaderItem,
+                               matching: .images,
+                               photoLibrary: .shared()) {
+                        Image(systemName: "camera.fill")
+                            .padding(8)
+                            .background(Color.white.opacity(0.8))
+                            .clipShape(Circle())
+                            .shadow(radius: 2)
+                    }
+                    .onChange(of: selectedHeaderItem) { _, newValue in
+                        if let item = newValue {
+                            Task {
+                                await onHeaderImageSelected(item)
+                            }
+                        }
+                    }
+                    .padding(.trailing, 32)
+                    .padding(.bottom, 16)
+                }
+            }
+            
+            // Profile image
+            ZStack(alignment: .bottomTrailing) {
+                ProfileImageView(profileImage: profileImage, profileURL: profileURL)
+                
+                PhotosPicker(selection: $selectedProfileItem,
+                           matching: .images,
+                           photoLibrary: .shared()) {
+                    Image(systemName: "camera.fill")
+                        .padding(6)
+                        .background(Color.white.opacity(0.8))
+                        .clipShape(Circle())
+                }
+                .onChange(of: selectedProfileItem) { _, newValue in
+                    if let item = newValue {
+                        Task {
+                            await onProfileImageSelected(item)
+                        }
+                    }
+                }
+                .offset(x: 32, y: 54)
+            }
+        }
+    }
+}
+
+// MARK: - Profile View
 struct ProfileView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
-    @StateObject private var imageViewModel: ProfileImageViewModel
+    @StateObject private var notebookViewModel = NotebookViewModel()
     @State private var showingEditProfile = false
     @State private var showingSettings = false
     @State private var selectedHeaderItem: PhotosPickerItem?
     @State private var selectedProfileItem: PhotosPickerItem?
+    @State private var isUploading = false
+    @State private var isEditingBio = false
+    @State private var tempBio: String = ""
+    @State private var totalPagesCreated: Int = 0
+    @State private var publicNotebooks: [PublicNotebook] = []
     
-    init() {
-        _imageViewModel = StateObject(wrappedValue: ProfileImageViewModel(authViewModel: AuthViewModel()))
+    var favoriteNotebooks: [Notebook] {
+        notebookViewModel.notebooks.filter { $0.isFavorite }
     }
-    
-    // Sample data
-    let savedNotebooks: [String: [String]] = [
-        "Travel": ["Japan 2023", "Italy Adventure"],
-        "Recipes": ["Vegan Delights", "Quick Meals"]
-    ]
-    let collections: [String] = ["Favorites", "Work", "Personal"]
-    let likedNotebooks: [String] = ["Art Portfolio 2024", "Math Notes"]
-    let featuredScrapbooks: [String] = ["My Best Scrapbook"]
-    let badges: [String] = ["Creative Star", "Consistent Contributor", "Community Helper"]
-    let scrapbookPages = 123
     
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 20) {
-                    // Header and profile image section
-                    ZStack(alignment: .bottomLeading) {
-                        // Header image
-                        if let headerImage = imageViewModel.headerImage {
-                            Image(uiImage: headerImage)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(height: 160)
-                                .clipped()
-                                .cornerRadius(16)
-                                .padding(.horizontal)
-                        } else if let headerURL = authViewModel.currentUser?.headerImageURL {
-                            AsyncImage(url: URL(string: headerURL)) { image in
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                            } placeholder: {
-                                Image("Logo")
-                                    .resizable()
-                                    .scaledToFill()
-                            }
-                            .frame(height: 160)
-                            .clipped()
-                            .cornerRadius(16)
-                            .padding(.horizontal)
-                        } else {
-                            Image("Logo")
-                                .resizable()
-                                .scaledToFill()
-                                .frame(height: 160)
-                                .clipped()
-                                .cornerRadius(16)
-                                .padding(.horizontal)
-                        }
-                        
-                        // Header image picker button
-                        HStack {
-                            Spacer()
-                            VStack {
-                                Spacer()
-                                PhotosPicker(selection: $selectedHeaderItem,
-                                           matching: .images,
-                                           photoLibrary: .shared()) {
-                                    Image(systemName: "camera.fill")
-                                        .padding(8)
-                                        .background(Color.white.opacity(0.8))
-                                        .clipShape(Circle())
-                                        .shadow(radius: 2)
-                                }
-                                .onChange(of: selectedHeaderItem) { _, newValue in
-                                    if let item = newValue {
-                                        Task {
-                                            await imageViewModel.handleHeaderImageSelection(item)
-                                        }
-                                    }
-                                }
-                                .padding(.trailing, 32)
-                                .padding(.bottom, 16)
-                            }
-                        }
-                        
-                        // Profile image (overlapping bottom left)
-                        ZStack(alignment: .bottomTrailing) {
-                            if let profileImage = imageViewModel.profileImage {
-                                Image(uiImage: profileImage)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 100, height: 100)
-                                    .clipShape(Circle())
-                                    .overlay(Circle().stroke(Color.white, lineWidth: 4))
-                                    .shadow(radius: 4)
-                                    .offset(x: 32, y: 50)
-                            } else if let profileURL = authViewModel.currentUser?.profileImageURL {
-                                AsyncImage(url: URL(string: profileURL)) { image in
-                                    image
-                                        .resizable()
-                                        .scaledToFill()
-                                } placeholder: {
-                                    Image(systemName: "person.crop.circle.fill")
-                                        .resizable()
-                                        .scaledToFill()
-                                }
-                                .frame(width: 100, height: 100)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.white, lineWidth: 4))
-                                .shadow(radius: 4)
-                                .offset(x: 32, y: 50)
-                            } else {
-                                Image(systemName: "person.crop.circle.fill")
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 100, height: 100)
-                                    .clipShape(Circle())
-                                    .overlay(Circle().stroke(Color.white, lineWidth: 4))
-                                    .shadow(radius: 4)
-                                    .offset(x: 32, y: 50)
-                            }
-                            
-                            PhotosPicker(selection: $selectedProfileItem,
-                                       matching: .images,
-                                       photoLibrary: .shared()) {
-                                Image(systemName: "camera.fill")
-                                    .padding(6)
-                                    .background(Color.white.opacity(0.8))
-                                    .clipShape(Circle())
-                            }
-                            .onChange(of: selectedProfileItem) { _, newValue in
-                                if let item = newValue {
-                                    Task {
-                                        await imageViewModel.handleProfileImageSelection(item)
-                                    }
-                                }
-                            }
-                            .offset(x: 32, y: 54)
-                        }
-                    }
-
-                    // Add vertical spacing below the header/profile image
+                    ProfileHeaderSection(
+                        selectedHeaderItem: $selectedHeaderItem,
+                        selectedProfileItem: $selectedProfileItem,
+                        headerImage: authViewModel.headerImage,
+                        headerURL: authViewModel.currentUser?.headerImageURL,
+                        profileImage: authViewModel.profileImage,
+                        profileURL: authViewModel.currentUser?.profileImageURL,
+                        onHeaderImageSelected: handleHeaderImageSelection,
+                        onProfileImageSelected: handleProfileImageSelection
+                    )
+                    
+                    // Add vertical spacing
                     Spacer().frame(height: 60)
-
-                    // Profile Info and rest of the content
+                    
+                    // Profile Info
                     VStack(alignment: .leading, spacing: 4) {
                         Text(authViewModel.currentUser?.username ?? "Username")
                             .font(.title2)
                             .fontWeight(.bold)
-                        Text("Bio goes here")
-                            .font(.subheadline)
+                        
+                        if isEditingBio {
+                            TextField("Write something about yourself...", text: $tempBio, axis: .vertical)
+                                .textFieldStyle(.roundedBorder)
+                                .lineLimit(3...6)
+                                .onSubmit {
+                                    saveBio()
+                                }
+                            
+                            HStack {
+                                Button("Save") {
+                                    saveBio()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                
+                                Button("Cancel") {
+                                    isEditingBio = false
+                                    tempBio = authViewModel.currentUser?.bio ?? ""
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        } else {
+                            Text(authViewModel.currentUser?.bio ?? "No bio yet")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .onTapGesture {
+                                    tempBio = authViewModel.currentUser?.bio ?? ""
+                                    isEditingBio = true
+                                }
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
-
+                    
                     // Action Buttons
                     HStack(spacing: 10) {
                         Button(action: { showingEditProfile = true }) {
@@ -265,67 +413,47 @@ struct ProfileView: View {
                         }
                     }
                     .padding(.horizontal)
-
+                    
                     // Scrapbook Stats
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Scrapbook Stats")
                             .font(.headline)
                         HStack {
-                            Text("Pages Created: \(scrapbookPages)")
+                            Text("Pages Created: \(totalPagesCreated)")
                             Spacer()
                         }
                         .font(.subheadline)
                     }
                     .padding(.horizontal)
 
-                    // Featured Scrapbooks
+                    // Featured Scrapbooks (now shows public notebooks)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Featured Scrapbooks")
+                        Text("My Public Notebooks")
                             .font(.headline)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack {
-                                ForEach(featuredScrapbooks, id: \.self) { scrapbook in
-                                    VStack {
-                                        Image("Logo")
-                                            .resizable()
-                                            .frame(width: 100, height: 100)
-                                            .cornerRadius(12)
-                                        Text(scrapbook)
-                                            .font(.caption)
-                                    }
-                                    .padding(4)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-
-                    // Saved Notebooks by Tag/Collection
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Saved Notebooks")
-                            .font(.headline)
-                        ForEach(savedNotebooks.keys.sorted(), id: \.self) { tag in
-                            VStack(alignment: .leading) {
-                                Text(tag)
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack {
-                                        ForEach(savedNotebooks[tag]!, id: \.self) { notebook in
-                                            NotebookCardView(title: notebook)
+                        if publicNotebooks.isEmpty {
+                            Text("No public notebooks yet")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        } else {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack {
+                                    ForEach(publicNotebooks) { notebook in
+                                        NavigationLink(destination: PublicNotebookDetailView(notebook: notebook)) {
+                                            VStack {
+                                                Image(notebook.coverImage)
+                                                    .resizable()
+                                                    .aspectRatio(4/5, contentMode: .fit)
+                                                    .frame(width: 100, height: 125)
+                                                    .cornerRadius(12)
+                                                Text(notebook.title)
+                                                    .font(.caption)
+                                                    .lineLimit(2)
+                                                    .multilineTextAlignment(.center)
+                                                    .frame(width: 100)
+                                            }
+                                            .padding(4)
                                         }
                                     }
-                                }
-                            }
-                        }
-                        // Collections
-                        Text("Collections")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack {
-                                ForEach(collections, id: \.self) { collection in
-                                    NotebookCardView(title: collection)
                                 }
                             }
                         }
@@ -334,34 +462,20 @@ struct ProfileView: View {
 
                     // Liked Notebooks
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Liked Notebooks")
+                        Text("Favorite Notebooks")
                             .font(.headline)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack {
-                                ForEach(likedNotebooks, id: \.self) { notebook in
-                                    NotebookCardView(title: notebook)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-
-                    // Badges/Achievements
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Badges & Achievements")
-                            .font(.headline)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack {
-                                ForEach(badges, id: \.self) { badge in
-                                    VStack {
-                                        Image(systemName: "star.fill")
-                                            .foregroundColor(.yellow)
-                                            .frame(width: 40, height: 40)
-                                        Text(badge)
-                                            .font(.caption)
-                                            .multilineTextAlignment(.center)
+                        if favoriteNotebooks.isEmpty {
+                            Text("No favorite notebooks yet")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        } else {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack {
+                                    ForEach(favoriteNotebooks) { notebook in
+                                        NavigationLink(destination: NotebookDetailView(notebook: notebook)) {
+                                            NotebookCardView(title: notebook.title)
+                                        }
                                     }
-                                    .padding(4)
                                 }
                             }
                         }
@@ -379,16 +493,196 @@ struct ProfileView: View {
                 SettingsView()
             }
             .overlay {
-                if imageViewModel.isUploading {
+                if isUploading {
                     ProgressView()
                         .scaleEffect(1.5)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(Color.black.opacity(0.2))
                 }
             }
+            .onAppear {
+                notebookViewModel.fetchNotebooks()
+                calculateTotalPages()
+                fetchPublicNotebooks()
+            }
         }
-        .onAppear {
-            imageViewModel.updateAuthViewModel(authViewModel)
+    }
+    
+    private func calculateTotalPages() {
+        guard let userId = authViewModel.currentUser?.id else { return }
+        
+        let db = Firestore.firestore()
+        db.collection("notebooks")
+            .whereField("ownerId", isEqualTo: userId)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    print("Error fetching notebooks: \(error.localizedDescription)")
+                    return
+                }
+                
+                var totalPages = 0
+                snapshot?.documents.forEach { document in
+                    let data = document.data()
+                    if let pages = data["pages"] as? [[String: Any]] {
+                        totalPages += pages.count
+                    }
+                }
+                
+                DispatchQueue.main.async {
+                    self.totalPagesCreated = totalPages
+                }
+            }
+    }
+    
+    private func fetchPublicNotebooks() {
+        guard let userId = authViewModel.currentUser?.id else { return }
+        
+        let db = Firestore.firestore()
+        db.collection("notebooks")
+            .whereField("ownerId", isEqualTo: userId)
+            .whereField("isPublic", isEqualTo: true)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    print("Error fetching public notebooks: \(error.localizedDescription)")
+                    return
+                }
+                
+                let notebooks = snapshot?.documents.compactMap { document -> PublicNotebook? in
+                    let data = document.data()
+                    
+                    // Convert Firestore Timestamp to Date
+                    let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
+                    
+                    // Extract and convert pages array
+                    let pagesData = data["pages"] as? [[String: Any]] ?? []
+                    let pages = pagesData.compactMap { pageData -> NotebookPage? in
+                        guard let id = pageData["id"] as? String,
+                              let content = pageData["content"] as? String,
+                              let type = pageData["type"] as? String,
+                              let order = pageData["order"] as? Int,
+                              let createdAt = (pageData["createdAt"] as? Timestamp)?.dateValue(),
+                              let updatedAt = (pageData["updatedAt"] as? Timestamp)?.dateValue()
+                        else {
+                            return nil
+                        }
+                        return NotebookPage(
+                            id: id,
+                            content: content,
+                            type: type,
+                            order: order,
+                            createdAt: createdAt,
+                            updatedAt: updatedAt
+                        )
+                    }
+                    
+                    // Sort pages by order
+                    let sortedPages = pages.sorted { $0.order < $1.order }
+                    
+                    return PublicNotebook(
+                        firestoreId: document.documentID,
+                        title: data["title"] as? String ?? "",
+                        author: userId,
+                        authorImage: authViewModel.currentUser?.profileImageURL ?? "person.circle.fill",
+                        coverImage: "Logo",
+                        description: data["description"] as? String ?? "",
+                        tags: [],
+                        likes: 0,
+                        comments: [],
+                        timestamp: createdAt,
+                        pages: sortedPages,
+                        isLiked: false,
+                        prompts: [],
+                        isPublic: true,
+                        feedDescription: data["feedDescription"] as? String ?? ""
+                    )
+                } ?? []
+                
+                DispatchQueue.main.async {
+                    self.publicNotebooks = notebooks
+                }
+            }
+    }
+    
+    private func saveBio() {
+        guard var user = authViewModel.currentUser else { return }
+        user.bio = tempBio
+        user.updatedAt = Date()
+        
+        Task {
+            do {
+                try await authViewModel.updateUser(user)
+                isEditingBio = false
+            } catch {
+                print("Error updating bio: \(error)")
+            }
+        }
+    }
+    
+    private func handleHeaderImageSelection(_ item: PhotosPickerItem) async {
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              let image = UIImage(data: data) else { return }
+        print("Header image selected")
+        isUploading = true
+        await uploadHeaderImage(image)
+        isUploading = false
+    }
+    
+    private func handleProfileImageSelection(_ item: PhotosPickerItem) async {
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              let image = UIImage(data: data) else { return }
+        print("📸 Profile image selected")
+        isUploading = true
+        await uploadProfileImage(image)
+        isUploading = false
+    }
+    
+    private func uploadHeaderImage(_ image: UIImage) async {
+        guard let userId = authViewModel.currentUser?.id else { 
+            print("Error: No user ID found")
+            return 
+        }
+        print("📸 Starting header image upload for user: \(userId)")
+        
+        do {
+            let path = "users/\(userId)/header.jpg"
+            print("📤 Uploading header image to path: \(path)")
+            let imageURL = try await StorageService.shared.uploadImage(image, path: path)
+            print("✅ Header image uploaded successfully. URL: \(imageURL)")
+            
+            var updatedUser = authViewModel.currentUser
+            updatedUser?.headerImageURL = imageURL
+            updatedUser?.updatedAt = Date()
+            if let user = updatedUser {
+                try await authViewModel.updateUser(user)
+                print("✅ User updated successfully with header image")
+            }
+        } catch {
+            print("❌ Error uploading header image: \(error)")
+        }
+    }
+    
+    private func uploadProfileImage(_ image: UIImage) async {
+        guard let userId = authViewModel.currentUser?.id else { 
+            print("❌ Error: No user ID found")
+            return 
+        }
+        print("📸 Starting profile image upload for user: \(userId)")
+        
+        do {
+            let path = "users/\(userId)/profile.jpg"
+            print("📤 Uploading profile image to path: \(path)")
+            let imageURL = try await StorageService.shared.uploadImage(image, path: path)
+            print("✅ Profile image uploaded successfully. URL: \(imageURL)")
+            
+            var updatedUser = authViewModel.currentUser
+            updatedUser?.profileImageURL = imageURL
+            updatedUser?.updatedAt = Date()
+            if let user = updatedUser {
+                try await authViewModel.updateUser(user)
+                print("✅ User updated successfully with profile image")
+            }
+        } catch {
+            print("❌ Error uploading profile image: \(error)")
         }
     }
 }
@@ -464,6 +758,7 @@ struct SettingsView: View {
     @Environment(\.presentationMode) var presentationMode
     @AppStorage("isDarkMode") private var isDarkMode = false
     @AppStorage("notificationsEnabled") private var notificationsEnabled = true
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         NavigationView {
@@ -502,6 +797,7 @@ struct SettingsView: View {
             .navigationBarItems(trailing: Button("Done") {
                 presentationMode.wrappedValue.dismiss()
             })
+            .preferredColorScheme(isDarkMode ? .dark : .light)
         }
     }
 }

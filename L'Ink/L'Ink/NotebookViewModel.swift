@@ -118,6 +118,12 @@ class NotebookViewModel: ObservableObject {
         updateNotebook(updatedNotebook)
     }
     
+    func toggleFavorite(_ notebook: Notebook) {
+        var updatedNotebook = notebook
+        updatedNotebook.isFavorite.toggle()
+        updateNotebook(updatedNotebook)
+    }
+    
     // Page Management Functions
     func addPage(to notebook: Notebook, type: PageType) {
         var updatedNotebook = notebook

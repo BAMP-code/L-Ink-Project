@@ -192,8 +192,10 @@ struct NotebookDetailView: View {
             }
             Text("Page \(selectedPageIndex + 1) of \(notebook.pages.count)")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.gray)
+                .foregroundColor(.primary)
                 .padding(.bottom, 8)
+                .textSelection(.enabled)
+                .tint(.blue)
             // Big Edit button
             Button(action: {
                 if isEditingPage {
@@ -834,16 +836,15 @@ struct PageContentView: View {
         Group {
             if page.type == .text {
                 TextEditor(text: $textContent)
-                    .onChange(of: textContent) { newValue in
+                    .onChange(of: textContent) { oldValue, newValue in
                         onUpdate(newValue)
                     }
             } else {
                 InkCanvasView(canvasView: $canvasView)
-                    .onChange(of: canvasView.drawing) { _ in
+                    .onChange(of: canvasView.drawing) { oldValue, newValue in
                         // Convert drawing to data and update
-                        if let data = try? canvasView.drawing.dataRepresentation() {
-                            onUpdate(data.base64EncodedString())
-                        }
+                        let data = canvasView.drawing.dataRepresentation()
+                        onUpdate(data.base64EncodedString())
                     }
             }
         }

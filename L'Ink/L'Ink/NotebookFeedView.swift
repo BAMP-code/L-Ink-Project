@@ -9,9 +9,18 @@ import SwiftUI
 import FirebaseFirestore
 import FirebaseAuth
 
+struct NotebookPage: Identifiable {
+    let id: String
+    let content: String
+    let type: String
+    let order: Int
+    let createdAt: Date
+    let updatedAt: Date
+}
+
 struct PublicNotebook: Identifiable {
     let id = UUID()
-    let firestoreId: String  // Add this to store the Firestore document ID
+    let firestoreId: String
     let title: String
     let author: String
     let authorImage: String
@@ -21,7 +30,7 @@ struct PublicNotebook: Identifiable {
     var likes: Int
     var comments: [NotebookComment]
     let timestamp: Date
-    let pageCount: Int
+    let pages: [NotebookPage]  // Store actual pages instead of just count
     var isLiked: Bool = false
     var isSaved: Bool = false
     let prompts: [String]
@@ -107,8 +116,30 @@ class FeedViewModel: ObservableObject {
                     // Convert Firestore Timestamp to Date
                     let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
                     
-                    // Extract pages array
-                    let pages = data["pages"] as? [[String: Any]] ?? []
+                    // Extract and convert pages array
+                    let pagesData = data["pages"] as? [[String: Any]] ?? []
+                    let pages = pagesData.compactMap { pageData -> NotebookPage? in
+                        guard let id = pageData["id"] as? String,
+                              let content = pageData["content"] as? String,
+                              let type = pageData["type"] as? String,
+                              let order = pageData["order"] as? Int,
+                              let createdAt = (pageData["createdAt"] as? Timestamp)?.dateValue(),
+                              let updatedAt = (pageData["updatedAt"] as? Timestamp)?.dateValue()
+                        else {
+                            return nil
+                        }
+                        return NotebookPage(
+                            id: id,
+                            content: content,
+                            type: type,
+                            order: order,
+                            createdAt: createdAt,
+                            updatedAt: updatedAt
+                        )
+                    }
+                    
+                    // Sort pages by order
+                    let sortedPages = pages.sorted { $0.order < $1.order }
                     
                     // Extract likes array
                     let likes = data["likes"] as? [String] ?? []
@@ -135,7 +166,7 @@ class FeedViewModel: ObservableObject {
                         likes: likes.count,
                         comments: comments,
                         timestamp: createdAt,
-                        pageCount: pages.count,
+                        pages: sortedPages,
                         isLiked: self?.likedNotebooks.contains(document.documentID) ?? false,
                         prompts: []
                     )
@@ -233,7 +264,7 @@ class FeedViewModel: ObservableObject {
         var score = 0.0
         
         // Content length/depth score
-        score += min(1.0, Double(notebook.pageCount) / 20.0) * 0.4
+        score += min(1.0, Double(notebook.pages.count) / 20.0) * 0.4
         
         // Description quality score
         let descriptionWords = notebook.description.split(separator: " ").count
@@ -477,7 +508,8 @@ struct PublicNotebookDetailView: View {
         VStack(spacing: 0) {
             // Page selector header
             HStack {
-                Text("Page \(selectedPageIndex + 1) of \(notebook.pageCount)")
+                // Add 1 to account for cover page
+                Text("Page \(selectedPageIndex + 1) of \(notebook.pages.count + 1)")
                     .font(.headline)
                 Spacer()
             }
@@ -485,11 +517,21 @@ struct PublicNotebookDetailView: View {
 
             // 3D Notebook View
             ZStack {
-                // Notebook Cover
-                Image(notebook.coverImage)
-                    .resizable()
-                    .aspectRatio(4/5, contentMode: .fit)
+                // Cover Page (Index 0)
+                if selectedPageIndex == 0 {
+                    VStack {
+                        Text(notebook.title)
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .multilineTextAlignment(.center)
+                            .padding()
+                        
+                        Image(notebook.coverImage)
+                            .resizable()
+                            .aspectRatio(4/5, contentMode: .fit)
+                    }
                     .frame(maxWidth: .infinity)
+                    .background(Color.white)
                     .cornerRadius(12)
                     .rotation3DEffect(
                         .degrees(rotation),
@@ -497,23 +539,24 @@ struct PublicNotebookDetailView: View {
                         anchor: .trailing,
                         perspective: 0.5
                     )
-                    .opacity(selectedPageIndex == 0 ? 1 : 0)
+                }
 
-                // Pages
-                ForEach(0..<notebook.pageCount, id: \.self) { index in
-                    if index > 0 {
-                        Text("Page \(index + 1)")
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(Color.white)
-                            .cornerRadius(12)
-                            .rotation3DEffect(
-                                .degrees(rotation),
-                                axis: (x: 0, y: 1, z: 0),
-                                anchor: .trailing,
-                                perspective: 0.5
-                            )
-                            .opacity(selectedPageIndex == index ? 1 : 0)
+                // Content Pages (Index 1 onwards)
+                if selectedPageIndex > 0 && selectedPageIndex - 1 < notebook.pages.count {
+                    VStack {
+                        Text(notebook.pages[selectedPageIndex - 1].content)
+                            .padding()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.white)
+                    .cornerRadius(12)
+                    .rotation3DEffect(
+                        .degrees(rotation),
+                        axis: (x: 0, y: 1, z: 0),
+                        anchor: .trailing,
+                        perspective: 0.5
+                    )
                 }
             }
             .frame(height: 500)
@@ -525,7 +568,8 @@ struct PublicNotebookDetailView: View {
                         }
                     }
                     .onEnded { value in
-                        if value.translation.width < -100 && selectedPageIndex < notebook.pageCount - 1 {
+                        // Add 1 to account for cover page
+                        if value.translation.width < -100 && selectedPageIndex < notebook.pages.count {
                             withAnimation(.easeInOut(duration: 0.5)) {
                                 rotation = -180
                                 isFlipping = true
@@ -577,7 +621,8 @@ struct PublicNotebookDetailView: View {
                 Spacer()
 
                 Button(action: {
-                    if selectedPageIndex < notebook.pageCount - 1 {
+                    // Add 1 to account for cover page
+                    if selectedPageIndex < notebook.pages.count {
                         withAnimation(.easeInOut(duration: 0.5)) {
                             rotation = -180
                             isFlipping = true
@@ -591,9 +636,9 @@ struct PublicNotebookDetailView: View {
                 }) {
                     Image(systemName: "chevron.right.circle.fill")
                         .font(.title)
-                        .foregroundColor(selectedPageIndex < notebook.pageCount - 1 ? .blue : .gray)
+                        .foregroundColor(selectedPageIndex < notebook.pages.count ? .blue : .gray)
                 }
-                .disabled(selectedPageIndex == notebook.pageCount - 1)
+                .disabled(selectedPageIndex == notebook.pages.count)
             }
             .padding()
         }
@@ -696,7 +741,7 @@ struct PublicNotebookView: View {
                 // Notebook Info
                 HStack {
                     Image(systemName: "doc.text")
-                    Text("\(notebook.pageCount) pages")
+                    Text("\(notebook.pages.count) pages")
                         .font(.subheadline)
                         .foregroundColor(.gray)
                 }

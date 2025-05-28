@@ -5,6 +5,7 @@ struct SignInView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var showingSignUp = false
+    @State private var isPasswordVisible = false
     
     var body: some View {
         VStack(spacing: 20) {
@@ -27,9 +28,23 @@ struct SignInView: View {
                     .autocapitalization(.none)
                     .keyboardType(.emailAddress)
                 
-                SecureField("Password", text: $password)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .textContentType(.password)
+                ZStack(alignment: .trailing) {
+                    if isPasswordVisible {
+                        TextField("Password", text: $password)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .textContentType(.password)
+                    } else {
+                        SecureField("Password", text: $password)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .textContentType(.password)
+                    }
+                    
+                    Button(action: { isPasswordVisible.toggle() }) {
+                        Image(systemName: isPasswordVisible ? "eye.slash.fill" : "eye.fill")
+                            .foregroundColor(.gray)
+                    }
+                    .padding(.trailing, 8)
+                }
             }
             .padding(.horizontal)
             

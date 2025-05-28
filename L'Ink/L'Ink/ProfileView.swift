@@ -321,17 +321,23 @@ struct ProfileHeaderSection: View {
 // MARK: - Profile View
 struct ProfileView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
+    @StateObject private var notebookViewModel = NotebookViewModel()
     @State private var showingEditProfile = false
     @State private var showingSettings = false
     @State private var selectedHeaderItem: PhotosPickerItem?
     @State private var selectedProfileItem: PhotosPickerItem?
     @State private var isUploading = false
+    @State private var isEditingBio = false
+    @State private var tempBio: String = ""
     
     // Sample data
-    let likedNotebooks: [String] = ["Art Portfolio 2024", "Math Notes"]
     let featuredScrapbooks: [String] = ["My Best Scrapbook"]
     let badges: [String] = ["Creative Star", "Consistent Contributor", "Community Helper"]
     let scrapbookPages = 123
+    
+    var favoriteNotebooks: [Notebook] {
+        notebookViewModel.notebooks.filter { $0.isFavorite }
+    }
     
     var body: some View {
         NavigationView {
@@ -356,8 +362,36 @@ struct ProfileView: View {
                         Text(authViewModel.currentUser?.username ?? "Username")
                             .font(.title2)
                             .fontWeight(.bold)
-                        Text("Bio goes here")
-                            .font(.subheadline)
+                        
+                        if isEditingBio {
+                            TextField("Write something about yourself...", text: $tempBio, axis: .vertical)
+                                .textFieldStyle(.roundedBorder)
+                                .lineLimit(3...6)
+                                .onSubmit {
+                                    saveBio()
+                                }
+                            
+                            HStack {
+                                Button("Save") {
+                                    saveBio()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                
+                                Button("Cancel") {
+                                    isEditingBio = false
+                                    tempBio = authViewModel.currentUser?.bio ?? ""
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        } else {
+                            Text(authViewModel.currentUser?.bio ?? "No bio yet")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .onTapGesture {
+                                    tempBio = authViewModel.currentUser?.bio ?? ""
+                                    isEditingBio = true
+                                }
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
@@ -418,12 +452,20 @@ struct ProfileView: View {
 
                     // Liked Notebooks
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Liked Notebooks")
+                        Text("Favorite Notebooks")
                             .font(.headline)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack {
-                                ForEach(likedNotebooks, id: \.self) { notebook in
-                                    NotebookCardView(title: notebook)
+                        if favoriteNotebooks.isEmpty {
+                            Text("No favorite notebooks yet")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        } else {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack {
+                                    ForEach(favoriteNotebooks) { notebook in
+                                        NavigationLink(destination: NotebookDetailView(notebook: notebook)) {
+                                            NotebookCardView(title: notebook.title)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -469,6 +511,24 @@ struct ProfileView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(Color.black.opacity(0.2))
                 }
+            }
+            .onAppear {
+                notebookViewModel.fetchNotebooks()
+            }
+        }
+    }
+    
+    private func saveBio() {
+        guard var user = authViewModel.currentUser else { return }
+        user.bio = tempBio
+        user.updatedAt = Date()
+        
+        Task {
+            do {
+                try await authViewModel.updateUser(user)
+                isEditingBio = false
+            } catch {
+                print("Error updating bio: \(error)")
             }
         }
     }

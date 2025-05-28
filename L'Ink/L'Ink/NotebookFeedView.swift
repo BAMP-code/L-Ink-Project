@@ -50,6 +50,7 @@ class FeedViewModel: ObservableObject {
     private var userPreferences: Set<String> = [] // tags user has shown interest in
     private let recommendationEngine = RecommendationEngine()
     private let currentUserId: String
+    private var likedNotebooks: Set<String> = [] // Cache of liked notebook IDs
     
     private let db = Firestore.firestore()
     
@@ -57,6 +58,7 @@ class FeedViewModel: ObservableObject {
         // Get the current user ID from Firebase Auth
         if let user = Auth.auth().currentUser {
             self.currentUserId = user.uid
+            fetchLikedNotebooks()
         } else {
             self.currentUserId = ""
             print("No authenticated user found")
@@ -68,6 +70,26 @@ class FeedViewModel: ObservableObject {
     func loadMockData() {
         // This is now just a fallback in case of errors
         notebooks = []
+    }
+    
+    private func fetchLikedNotebooks() {
+        let userRef = db.collection("users").document(currentUserId)
+        userRef.getDocument { [weak self] snapshot, error in
+            guard let self = self,
+                  let userData = snapshot?.data() else {
+                print("Error fetching user data: \(error?.localizedDescription ?? "Unknown error")")
+                return
+            }
+            
+            // Get the array of liked notebook IDs, create if doesn't exist
+            let likedIds = userData["likedNotebooks"] as? [String] ?? []
+            self.likedNotebooks = Set(likedIds)
+            
+            // Update isLiked state for all notebooks
+            for (index, notebook) in self.notebooks.enumerated() {
+                self.notebooks[index].isLiked = self.likedNotebooks.contains(notebook.firestoreId)
+            }
+        }
     }
     
     private func fetchNotebooks() {
@@ -103,18 +125,18 @@ class FeedViewModel: ObservableObject {
                     }
                     
                     return PublicNotebook(
-                        firestoreId: document.documentID,  // Store the Firestore document ID
+                        firestoreId: document.documentID,
                         title: data["title"] as? String ?? "",
                         author: data["ownerId"] as? String ?? "",
                         authorImage: "person.circle.fill",
                         coverImage: "Logo",
                         description: data["description"] as? String ?? "",
-                        tags: [], // We can extract tags from description later if needed
+                        tags: [],
                         likes: likes.count,
                         comments: comments,
                         timestamp: createdAt,
                         pageCount: pages.count,
-                        isLiked: likes.contains(self?.currentUserId ?? ""),
+                        isLiked: self?.likedNotebooks.contains(document.documentID) ?? false,
                         prompts: []
                     )
                 }
@@ -296,26 +318,44 @@ class FeedViewModel: ObservableObject {
         notebooks[index].isLiked.toggle()
         notebooks[index].likes += notebooks[index].isLiked ? 1 : -1
         
-        // Update Firestore directly using the document ID
-        let docRef = db.collection("notebooks").document(notebook.firestoreId)
-        
+        // Update user's likedNotebooks in local cache
         if notebooks[index].isLiked {
-            // Add like
-            docRef.updateData([
-                "likes": FieldValue.arrayUnion([currentUserId])
-            ]) { error in
-                if let error = error {
-                    print("Error adding like: \(error.localizedDescription)")
-                }
-            }
+            likedNotebooks.insert(notebook.firestoreId)
         } else {
-            // Remove like
-            docRef.updateData([
+            likedNotebooks.remove(notebook.firestoreId)
+        }
+        
+        // Update Firestore - both the notebook document and user document
+        let batch = db.batch()
+        
+        // Update notebook's likes array
+        let notebookRef = db.collection("notebooks").document(notebook.firestoreId)
+        if notebooks[index].isLiked {
+            batch.updateData([
+                "likes": FieldValue.arrayUnion([currentUserId])
+            ], forDocument: notebookRef)
+        } else {
+            batch.updateData([
                 "likes": FieldValue.arrayRemove([currentUserId])
-            ]) { error in
-                if let error = error {
-                    print("Error removing like: \(error.localizedDescription)")
-                }
+            ], forDocument: notebookRef)
+        }
+        
+        // Update user's likedNotebooks array
+        let userRef = db.collection("users").document(currentUserId)
+        if notebooks[index].isLiked {
+            batch.updateData([
+                "likedNotebooks": FieldValue.arrayUnion([notebook.firestoreId])
+            ], forDocument: userRef)
+        } else {
+            batch.updateData([
+                "likedNotebooks": FieldValue.arrayRemove([notebook.firestoreId])
+            ], forDocument: userRef)
+        }
+        
+        // Commit the batch
+        batch.commit { error in
+            if let error = error {
+                print("Error updating like status: \(error.localizedDescription)")
             }
         }
     }

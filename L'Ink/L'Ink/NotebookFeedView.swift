@@ -34,6 +34,8 @@ struct PublicNotebook: Identifiable {
     var isLiked: Bool = false
     var isSaved: Bool = false
     let prompts: [String]
+    var isPublic: Bool = false
+    var feedDescription: String = ""  // Add this for the feed post description
     
     // Ranking score properties
     var viewCount: Int = 0
@@ -53,6 +55,8 @@ struct NotebookComment: Identifiable {
 class FeedViewModel: ObservableObject {
     @Published var notebooks: [PublicNotebook] = []
     @Published var searchText: String = ""
+    @Published var userProfileImages: [String: String] = [:] // userId: profileImageURL
+    @Published var userNotebooks: [PublicNotebook] = []
     
     // User interaction history
     private var userInteractionHistory: [String: [Date]] = [:] // notebookId: [interaction timestamps]
@@ -67,7 +71,9 @@ class FeedViewModel: ObservableObject {
         // Get the current user ID from Firebase Auth
         if let user = Auth.auth().currentUser {
             self.currentUserId = user.uid
+            print("Current user ID: \(self.currentUserId)") // Debug log
             fetchLikedNotebooks()
+            fetchUserNotebooks() // Fetch user notebooks on init
         } else {
             self.currentUserId = ""
             print("No authenticated user found")
@@ -97,6 +103,23 @@ class FeedViewModel: ObservableObject {
             // Update isLiked state for all notebooks
             for (index, notebook) in self.notebooks.enumerated() {
                 self.notebooks[index].isLiked = self.likedNotebooks.contains(notebook.firestoreId)
+            }
+        }
+    }
+    
+    private func fetchUserProfileImage(userId: String) {
+        // Skip if we already have the image URL
+        guard userProfileImages[userId] == nil else { return }
+        
+        db.collection("users").document(userId).getDocument { [weak self] snapshot, error in
+            guard let self = self,
+                  let userData = snapshot?.data(),
+                  let profileImageURL = userData["profileImageURL"] as? String else {
+                return
+            }
+            
+            DispatchQueue.main.async {
+                self.userProfileImages[userId] = profileImageURL
             }
         }
     }
@@ -159,11 +182,16 @@ class FeedViewModel: ObservableObject {
                     let viewCount = data["viewCount"] as? Int ?? 0
                     let timeSpentSeconds = data["timeSpentSeconds"] as? Int ?? 0
                     
+                    let ownerId = data["ownerId"] as? String ?? ""
+                    
+                    // Fetch the user's profile image
+                    self?.fetchUserProfileImage(userId: ownerId)
+                    
                     var notebook = PublicNotebook(
                         firestoreId: document.documentID,
                         title: data["title"] as? String ?? "",
-                        author: data["ownerId"] as? String ?? "",
-                        authorImage: "person.circle.fill",
+                        author: ownerId,
+                        authorImage: self?.userProfileImages[ownerId] ?? "person.circle.fill",
                         coverImage: "Logo",
                         description: data["description"] as? String ?? "",
                         tags: [],
@@ -172,7 +200,9 @@ class FeedViewModel: ObservableObject {
                         timestamp: createdAt,
                         pages: sortedPages,
                         isLiked: self?.likedNotebooks.contains(document.documentID) ?? false,
-                        prompts: []
+                        prompts: [],
+                        isPublic: data["isPublic"] as? Bool ?? false,
+                        feedDescription: data["feedDescription"] as? String ?? ""
                     )
                     
                     // Set the metrics
@@ -477,11 +507,126 @@ class FeedViewModel: ObservableObject {
             return 0.1
         }
     }
+    
+    func fetchUserNotebooks() {
+        print("Fetching notebooks for user: \(currentUserId)") // Debug log
+        
+        db.collection("notebooks")
+            .whereField("ownerId", isEqualTo: currentUserId)
+            .getDocuments { [weak self] snapshot, error in
+                if let error = error {
+                    print("Error fetching user notebooks: \(error.localizedDescription)")
+                    return
+                }
+                
+                guard let self = self,
+                      let documents = snapshot?.documents else {
+                    print("No documents found")
+                    return
+                }
+                
+                print("Found \(documents.count) notebooks for user")
+                
+                self.userNotebooks = documents.compactMap { document in
+                    let data = document.data()
+                    print("Processing notebook: \(data["title"] ?? "Untitled")")
+                    
+                    // Convert Firestore Timestamp to Date
+                    let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
+                    
+                    // Extract and convert pages array
+                    let pagesData = data["pages"] as? [[String: Any]] ?? []
+                    let pages = pagesData.compactMap { pageData -> NotebookPage? in
+                        guard let id = pageData["id"] as? String,
+                              let content = pageData["content"] as? String,
+                              let type = pageData["type"] as? String,
+                              let order = pageData["order"] as? Int,
+                              let createdAt = (pageData["createdAt"] as? Timestamp)?.dateValue(),
+                              let updatedAt = (pageData["updatedAt"] as? Timestamp)?.dateValue()
+                        else {
+                            return nil
+                        }
+                        return NotebookPage(
+                            id: id,
+                            content: content,
+                            type: type,
+                            order: order,
+                            createdAt: createdAt,
+                            updatedAt: updatedAt
+                        )
+                    }
+                    
+                    // Sort pages by order
+                    let sortedPages = pages.sorted { $0.order < $1.order }
+                    
+                    let notebook = PublicNotebook(
+                        firestoreId: document.documentID,
+                        title: data["title"] as? String ?? "",
+                        author: self.currentUserId,
+                        authorImage: self.userProfileImages[self.currentUserId] ?? "person.circle.fill",
+                        coverImage: "Logo",
+                        description: data["description"] as? String ?? "",
+                        tags: [],
+                        likes: 0,
+                        comments: [],
+                        timestamp: createdAt,
+                        pages: sortedPages,
+                        isLiked: false,
+                        prompts: [],
+                        isPublic: data["isPublic"] as? Bool ?? false,
+                        feedDescription: data["feedDescription"] as? String ?? ""
+                    )
+                    
+                    print("Created notebook object: \(notebook.title)")
+                    return notebook
+                }
+                
+                print("Final userNotebooks count: \(self.userNotebooks.count)")
+            }
+    }
+    
+    func makeNotebookPublic(_ notebook: PublicNotebook, description: String, completion: @escaping (Bool) -> Void) {
+        let notebookRef = db.collection("notebooks").document(notebook.firestoreId)
+        
+        // First, update the ownerId to use the Firebase Auth user ID
+        notebookRef.updateData([
+            "ownerId": currentUserId,
+            "isPublic": true,
+            "sharedAt": Timestamp(date: Date()),
+            "feedDescription": description
+        ]) { error in
+            if let error = error {
+                print("Error making notebook public: \(error.localizedDescription)")
+                completion(false)
+            } else {
+                // Refresh the feed to show the newly shared notebook
+                self.fetchNotebooks()
+                completion(true)
+            }
+        }
+    }
+    
+    func makeNotebookPrivate(_ notebook: PublicNotebook) {
+        let notebookRef = db.collection("notebooks").document(notebook.firestoreId)
+        
+        notebookRef.updateData([
+            "isPublic": false,
+            "sharedAt": FieldValue.delete()
+        ]) { error in
+            if let error = error {
+                print("Error making notebook private: \(error.localizedDescription)")
+            } else {
+                // Remove the notebook from the feed
+                self.notebooks.removeAll { $0.firestoreId == notebook.firestoreId }
+            }
+        }
+    }
 }
 
 struct NotebookFeedView: View {
     @StateObject private var viewModel = FeedViewModel()
     @State private var isRefreshing = false
+    @State private var showingShareSheet = false
     
     var body: some View {
         NavigationView {
@@ -507,13 +652,17 @@ struct NotebookFeedView: View {
                         .clipShape(Circle())
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 16) {
-                        Button(action: {}) {
-                            Image(systemName: "magnifyingglass")
-                                .font(.system(size: 20))
-                        }
+                    Button(action: {
+                        showingShareSheet = true
+                    }) {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 24))
+                            .foregroundColor(.blue)
                     }
                 }
+            }
+            .sheet(isPresented: $showingShareSheet) {
+                ShareNotebookView(viewModel: viewModel)
             }
         }
     }
@@ -523,6 +672,175 @@ struct NotebookFeedView: View {
         viewModel.loadMockData()
         try? await Task.sleep(nanoseconds: 1_000_000_000)
         isRefreshing = false
+    }
+}
+
+struct ShareNotebookView: View {
+    @ObservedObject var viewModel: FeedViewModel
+    @Environment(\.dismiss) var dismiss
+    @State private var selectedNotebook: PublicNotebook?
+    @State private var description: String = ""
+    @State private var showingDescriptionSheet = false
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                if viewModel.userNotebooks.isEmpty {
+                    VStack(spacing: 20) {
+                        Image(systemName: "book.closed")
+                            .font(.system(size: 50))
+                            .foregroundColor(.gray)
+                        Text("No notebooks to share")
+                            .font(.headline)
+                        Text("Create a notebook first to share it with others")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List {
+                        ForEach(viewModel.userNotebooks) { notebook in
+                            Button(action: {
+                                selectedNotebook = notebook
+                                showingDescriptionSheet = true
+                            }) {
+                                HStack {
+                                    Image(notebook.coverImage)
+                                        .resizable()
+                                        .aspectRatio(4/5, contentMode: .fit)
+                                        .frame(width: 60, height: 75)
+                                        .cornerRadius(8)
+                                    
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(notebook.title)
+                                            .font(.headline)
+                                        Text("\(notebook.pages.count) pages")
+                                            .font(.subheadline)
+                                            .foregroundColor(.gray)
+                                        if notebook.isPublic {
+                                            Text("Currently shared")
+                                                .font(.caption)
+                                                .foregroundColor(.green)
+                                        }
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    if notebook.isPublic {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.green)
+                                    }
+                                }
+                            }
+                            .foregroundColor(.primary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Share to Feed")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+            .sheet(isPresented: $showingDescriptionSheet) {
+                if let notebook = selectedNotebook {
+                    DescriptionInputView(
+                        notebook: notebook,
+                        description: $description,
+                        viewModel: viewModel,
+                        dismiss: dismiss
+                    )
+                }
+            }
+            .onAppear {
+                viewModel.fetchUserNotebooks()
+            }
+        }
+    }
+}
+
+struct DescriptionInputView: View {
+    let notebook: PublicNotebook
+    @Binding var description: String
+    @ObservedObject var viewModel: FeedViewModel
+    let dismiss: DismissAction
+    @Environment(\.dismiss) var sheetDismiss
+    @State private var isSharing = false
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                // Notebook preview
+                VStack(alignment: .leading, spacing: 12) {
+                    Image(notebook.coverImage)
+                        .resizable()
+                        .aspectRatio(4/5, contentMode: .fit)
+                        .frame(height: 200)
+                        .cornerRadius(12)
+                    
+                    Text(notebook.title)
+                        .font(.headline)
+                    
+                    Text("\(notebook.pages.count) pages")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                .padding()
+                
+                // Description input
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("What would you like to share about this notebook?")
+                        .font(.headline)
+                    
+                    TextEditor(text: $description)
+                        .frame(height: 100)
+                        .padding(8)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                        )
+                }
+                .padding()
+                
+                Spacer()
+            }
+            .navigationTitle("Share to Feed")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        sheetDismiss()
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        isSharing = true
+                        viewModel.makeNotebookPublic(notebook, description: description) { success in
+                            isSharing = false
+                            if success {
+                                dismiss()
+                            }
+                        }
+                    }) {
+                        if isSharing {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle())
+                        } else {
+                            Text("Share")
+                        }
+                    }
+                    .disabled(description.isEmpty || isSharing)
+                }
+            }
+        }
     }
 }
 
@@ -687,11 +1005,24 @@ struct PublicNotebookView: View {
             VStack(alignment: .leading, spacing: 8) {
                 // Notebook Header
                 HStack {
-                    Image(systemName: notebook.authorImage)
-                        .resizable()
-                        .scaledToFill()
+                    if let profileImageURL = viewModel.userProfileImages[notebook.author] {
+                        AsyncImage(url: URL(string: profileImageURL)) { image in
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        } placeholder: {
+                            Image(systemName: "person.circle.fill")
+                                .resizable()
+                                .foregroundColor(.gray)
+                        }
                         .frame(width: 32, height: 32)
                         .clipShape(Circle())
+                    } else {
+                        Image(systemName: "person.circle.fill")
+                            .resizable()
+                            .frame(width: 32, height: 32)
+                            .foregroundColor(.gray)
+                    }
 
                     VStack(alignment: .leading) {
                         Text(notebook.title)

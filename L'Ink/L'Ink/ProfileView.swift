@@ -2,6 +2,7 @@ import SwiftUI
 import FirebaseStorage
 import PhotosUI
 import Combine
+import FirebaseFirestore
 
 extension Notification.Name {
     static let userDataUpdated = Notification.Name("userDataUpdated")
@@ -329,11 +330,8 @@ struct ProfileView: View {
     @State private var isUploading = false
     @State private var isEditingBio = false
     @State private var tempBio: String = ""
-    
-    // Sample data
-    let featuredScrapbooks: [String] = ["My Best Scrapbook"]
-    let badges: [String] = ["Creative Star", "Consistent Contributor", "Community Helper"]
-    let scrapbookPages = 123
+    @State private var totalPagesCreated: Int = 0
+    @State private var publicNotebooks: [PublicNotebook] = []
     
     var favoriteNotebooks: [Notebook] {
         notebookViewModel.notebooks.filter { $0.isFavorite }
@@ -421,29 +419,41 @@ struct ProfileView: View {
                         Text("Scrapbook Stats")
                             .font(.headline)
                         HStack {
-                            Text("Pages Created: \(scrapbookPages)")
+                            Text("Pages Created: \(totalPagesCreated)")
                             Spacer()
                         }
                         .font(.subheadline)
                     }
                     .padding(.horizontal)
 
-                    // Featured Scrapbooks
+                    // Featured Scrapbooks (now shows public notebooks)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Featured Scrapbooks")
+                        Text("My Public Notebooks")
                             .font(.headline)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack {
-                                ForEach(featuredScrapbooks, id: \.self) { scrapbook in
-                                    VStack {
-                                        Image("Logo")
-                                            .resizable()
-                                            .frame(width: 100, height: 100)
-                                            .cornerRadius(12)
-                                        Text(scrapbook)
-                                            .font(.caption)
+                        if publicNotebooks.isEmpty {
+                            Text("No public notebooks yet")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        } else {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack {
+                                    ForEach(publicNotebooks) { notebook in
+                                        NavigationLink(destination: PublicNotebookDetailView(notebook: notebook)) {
+                                            VStack {
+                                                Image(notebook.coverImage)
+                                                    .resizable()
+                                                    .aspectRatio(4/5, contentMode: .fit)
+                                                    .frame(width: 100, height: 125)
+                                                    .cornerRadius(12)
+                                                Text(notebook.title)
+                                                    .font(.caption)
+                                                    .lineLimit(2)
+                                                    .multilineTextAlignment(.center)
+                                                    .frame(width: 100)
+                                            }
+                                            .padding(4)
+                                        }
                                     }
-                                    .padding(4)
                                 }
                             }
                         }
@@ -471,28 +481,6 @@ struct ProfileView: View {
                         }
                     }
                     .padding(.horizontal)
-
-                    // Badges/Achievements
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Badges & Achievements")
-                            .font(.headline)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack {
-                                ForEach(badges, id: \.self) { badge in
-                                    VStack {
-                                        Image(systemName: "star.fill")
-                                            .foregroundColor(.yellow)
-                                            .frame(width: 40, height: 40)
-                                        Text(badge)
-                                            .font(.caption)
-                                            .multilineTextAlignment(.center)
-                                    }
-                                    .padding(4)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
                 }
                 .padding(.vertical)
             }
@@ -514,8 +502,105 @@ struct ProfileView: View {
             }
             .onAppear {
                 notebookViewModel.fetchNotebooks()
+                calculateTotalPages()
+                fetchPublicNotebooks()
             }
         }
+    }
+    
+    private func calculateTotalPages() {
+        guard let userId = authViewModel.currentUser?.id else { return }
+        
+        let db = Firestore.firestore()
+        db.collection("notebooks")
+            .whereField("ownerId", isEqualTo: userId)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    print("Error fetching notebooks: \(error.localizedDescription)")
+                    return
+                }
+                
+                var totalPages = 0
+                snapshot?.documents.forEach { document in
+                    let data = document.data()
+                    if let pages = data["pages"] as? [[String: Any]] {
+                        totalPages += pages.count
+                    }
+                }
+                
+                DispatchQueue.main.async {
+                    self.totalPagesCreated = totalPages
+                }
+            }
+    }
+    
+    private func fetchPublicNotebooks() {
+        guard let userId = authViewModel.currentUser?.id else { return }
+        
+        let db = Firestore.firestore()
+        db.collection("notebooks")
+            .whereField("ownerId", isEqualTo: userId)
+            .whereField("isPublic", isEqualTo: true)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    print("Error fetching public notebooks: \(error.localizedDescription)")
+                    return
+                }
+                
+                let notebooks = snapshot?.documents.compactMap { document -> PublicNotebook? in
+                    let data = document.data()
+                    
+                    // Convert Firestore Timestamp to Date
+                    let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
+                    
+                    // Extract and convert pages array
+                    let pagesData = data["pages"] as? [[String: Any]] ?? []
+                    let pages = pagesData.compactMap { pageData -> NotebookPage? in
+                        guard let id = pageData["id"] as? String,
+                              let content = pageData["content"] as? String,
+                              let type = pageData["type"] as? String,
+                              let order = pageData["order"] as? Int,
+                              let createdAt = (pageData["createdAt"] as? Timestamp)?.dateValue(),
+                              let updatedAt = (pageData["updatedAt"] as? Timestamp)?.dateValue()
+                        else {
+                            return nil
+                        }
+                        return NotebookPage(
+                            id: id,
+                            content: content,
+                            type: type,
+                            order: order,
+                            createdAt: createdAt,
+                            updatedAt: updatedAt
+                        )
+                    }
+                    
+                    // Sort pages by order
+                    let sortedPages = pages.sorted { $0.order < $1.order }
+                    
+                    return PublicNotebook(
+                        firestoreId: document.documentID,
+                        title: data["title"] as? String ?? "",
+                        author: userId,
+                        authorImage: authViewModel.currentUser?.profileImageURL ?? "person.circle.fill",
+                        coverImage: "Logo",
+                        description: data["description"] as? String ?? "",
+                        tags: [],
+                        likes: 0,
+                        comments: [],
+                        timestamp: createdAt,
+                        pages: sortedPages,
+                        isLiked: false,
+                        prompts: [],
+                        isPublic: true,
+                        feedDescription: data["feedDescription"] as? String ?? ""
+                    )
+                } ?? []
+                
+                DispatchQueue.main.async {
+                    self.publicNotebooks = notebooks
+                }
+            }
     }
     
     private func saveBio() {

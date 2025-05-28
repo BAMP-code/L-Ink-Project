@@ -1,6 +1,11 @@
 import SwiftUI
 import FirebaseStorage
 import PhotosUI
+import Combine
+
+extension Notification.Name {
+    static let userDataUpdated = Notification.Name("userDataUpdated")
+}
 
 @MainActor
 class ProfileImageViewModel: ObservableObject {
@@ -8,13 +13,85 @@ class ProfileImageViewModel: ObservableObject {
     @Published var profileImage: UIImage?
     @Published var isUploading = false
     private var authViewModel: AuthViewModel
+    private var cancellables = Set<AnyCancellable>()
     
     init(authViewModel: AuthViewModel) {
         self.authViewModel = authViewModel
+        setupNotificationObserver()
+        loadImages()
+    }
+    
+    private func setupNotificationObserver() {
+        NotificationCenter.default.publisher(for: .userDataUpdated)
+            .sink { [weak self] _ in
+                self?.loadImages()
+            }
+            .store(in: &cancellables)
     }
     
     func updateAuthViewModel(_ newAuthViewModel: AuthViewModel) {
         self.authViewModel = newAuthViewModel
+        loadImages()
+    }
+    
+    private func loadImages() {
+        print("🔄 Starting to load images...")
+        
+        Task {
+            if let headerURL = authViewModel.currentUser?.headerImageURL {
+                print("📸 Found header URL: \(headerURL)")
+                if let url = URL(string: headerURL) {
+                    do {
+                        print("📥 Downloading header image...")
+                        let (data, response) = try await URLSession.shared.data(from: url)
+                        if let httpResponse = response as? HTTPURLResponse {
+                            print("📡 Header image response status: \(httpResponse.statusCode)")
+                        }
+                        if let image = UIImage(data: data) {
+                            print("✅ Header image loaded successfully")
+                            await MainActor.run {
+                                self.headerImage = image
+                            }
+                        } else {
+                            print("❌ Failed to create header image from data")
+                        }
+                    } catch {
+                        print("❌ Error loading header image: \(error)")
+                    }
+                } else {
+                    print("❌ Invalid header URL: \(headerURL)")
+                }
+            } else {
+                print("ℹ️ No header URL found")
+            }
+            
+            if let profileURL = authViewModel.currentUser?.profileImageURL {
+                print("📸 Found profile URL: \(profileURL)")
+                if let url = URL(string: profileURL) {
+                    do {
+                        print("📥 Downloading profile image...")
+                        let (data, response) = try await URLSession.shared.data(from: url)
+                        if let httpResponse = response as? HTTPURLResponse {
+                            print("📡 Profile image response status: \(httpResponse.statusCode)")
+                        }
+                        if let image = UIImage(data: data) {
+                            print("✅ Profile image loaded successfully")
+                            await MainActor.run {
+                                self.profileImage = image
+                            }
+                        } else {
+                            print("❌ Failed to create profile image from data")
+                        }
+                    } catch {
+                        print("❌ Error loading profile image: \(error)")
+                    }
+                } else {
+                    print("❌ Invalid profile URL: \(profileURL)")
+                }
+            } else {
+                print("ℹ️ No profile URL found")
+            }
+        }
     }
     
     func handleHeaderImageSelection(_ item: PhotosPickerItem) async {
@@ -88,17 +165,167 @@ class ProfileImageViewModel: ObservableObject {
     }
 }
 
+// MARK: - Header Image View
+struct HeaderImageView: View {
+    let headerImage: UIImage?
+    let headerURL: String?
+    
+    var body: some View {
+        Group {
+            if let headerImage = headerImage {
+                Image(uiImage: headerImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(height: 160)
+                    .clipped()
+                    .cornerRadius(16)
+                    .padding(.horizontal)
+            } else if let headerURL = headerURL {
+                AsyncImage(url: URL(string: headerURL)) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    Image("Logo")
+                        .resizable()
+                        .scaledToFill()
+                }
+                .frame(height: 160)
+                .clipped()
+                .cornerRadius(16)
+                .padding(.horizontal)
+            } else {
+                Image("Logo")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(height: 160)
+                    .clipped()
+                    .cornerRadius(16)
+                    .padding(.horizontal)
+            }
+        }
+    }
+}
+
+// MARK: - Profile Image View
+struct ProfileImageView: View {
+    let profileImage: UIImage?
+    let profileURL: String?
+    
+    var body: some View {
+        Group {
+            if let profileImage = profileImage {
+                Image(uiImage: profileImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 100, height: 100)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(Color.white, lineWidth: 4))
+                    .shadow(radius: 4)
+                    .offset(x: 32, y: 50)
+            } else if let profileURL = profileURL {
+                AsyncImage(url: URL(string: profileURL)) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    Image(systemName: "person.crop.circle.fill")
+                        .resizable()
+                        .scaledToFill()
+                }
+                .frame(width: 100, height: 100)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Color.white, lineWidth: 4))
+                .shadow(radius: 4)
+                .offset(x: 32, y: 50)
+            } else {
+                Image(systemName: "person.crop.circle.fill")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 100, height: 100)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(Color.white, lineWidth: 4))
+                    .shadow(radius: 4)
+                    .offset(x: 32, y: 50)
+            }
+        }
+    }
+}
+
+// MARK: - Profile Header Section
+struct ProfileHeaderSection: View {
+    @Binding var selectedHeaderItem: PhotosPickerItem?
+    @Binding var selectedProfileItem: PhotosPickerItem?
+    let headerImage: UIImage?
+    let headerURL: String?
+    let profileImage: UIImage?
+    let profileURL: String?
+    let onHeaderImageSelected: (PhotosPickerItem) async -> Void
+    let onProfileImageSelected: (PhotosPickerItem) async -> Void
+    
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            HeaderImageView(headerImage: headerImage, headerURL: headerURL)
+            
+            // Header image picker button
+            HStack {
+                Spacer()
+                VStack {
+                    Spacer()
+                    PhotosPicker(selection: $selectedHeaderItem,
+                               matching: .images,
+                               photoLibrary: .shared()) {
+                        Image(systemName: "camera.fill")
+                            .padding(8)
+                            .background(Color.white.opacity(0.8))
+                            .clipShape(Circle())
+                            .shadow(radius: 2)
+                    }
+                    .onChange(of: selectedHeaderItem) { _, newValue in
+                        if let item = newValue {
+                            Task {
+                                await onHeaderImageSelected(item)
+                            }
+                        }
+                    }
+                    .padding(.trailing, 32)
+                    .padding(.bottom, 16)
+                }
+            }
+            
+            // Profile image
+            ZStack(alignment: .bottomTrailing) {
+                ProfileImageView(profileImage: profileImage, profileURL: profileURL)
+                
+                PhotosPicker(selection: $selectedProfileItem,
+                           matching: .images,
+                           photoLibrary: .shared()) {
+                    Image(systemName: "camera.fill")
+                        .padding(6)
+                        .background(Color.white.opacity(0.8))
+                        .clipShape(Circle())
+                }
+                .onChange(of: selectedProfileItem) { _, newValue in
+                    if let item = newValue {
+                        Task {
+                            await onProfileImageSelected(item)
+                        }
+                    }
+                }
+                .offset(x: 32, y: 54)
+            }
+        }
+    }
+}
+
+// MARK: - Profile View
 struct ProfileView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
-    @StateObject private var imageViewModel: ProfileImageViewModel
     @State private var showingEditProfile = false
     @State private var showingSettings = false
     @State private var selectedHeaderItem: PhotosPickerItem?
     @State private var selectedProfileItem: PhotosPickerItem?
-    
-    init() {
-        _imageViewModel = StateObject(wrappedValue: ProfileImageViewModel(authViewModel: AuthViewModel()))
-    }
+    @State private var isUploading = false
     
     // Sample data
     let likedNotebooks: [String] = ["Art Portfolio 2024", "Math Notes"]
@@ -110,127 +337,21 @@ struct ProfileView: View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 20) {
-                    // Header and profile image section
-                    ZStack(alignment: .bottomLeading) {
-                        // Header image
-                        if let headerImage = imageViewModel.headerImage {
-                            Image(uiImage: headerImage)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(height: 160)
-                                .clipped()
-                                .cornerRadius(16)
-                                .padding(.horizontal)
-                        } else if let headerURL = authViewModel.currentUser?.headerImageURL {
-                            AsyncImage(url: URL(string: headerURL)) { image in
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                            } placeholder: {
-                                Image("Logo")
-                                    .resizable()
-                                    .scaledToFill()
-                            }
-                            .frame(height: 160)
-                            .clipped()
-                            .cornerRadius(16)
-                            .padding(.horizontal)
-                        } else {
-                            Image("Logo")
-                                .resizable()
-                                .scaledToFill()
-                                .frame(height: 160)
-                                .clipped()
-                                .cornerRadius(16)
-                                .padding(.horizontal)
-                        }
-                        
-                        // Header image picker button
-                        HStack {
-                            Spacer()
-                            VStack {
-                                Spacer()
-                                PhotosPicker(selection: $selectedHeaderItem,
-                                           matching: .images,
-                                           photoLibrary: .shared()) {
-                                    Image(systemName: "camera.fill")
-                                        .padding(8)
-                                        .background(Color.white.opacity(0.8))
-                                        .clipShape(Circle())
-                                        .shadow(radius: 2)
-                                }
-                                .onChange(of: selectedHeaderItem) { _, newValue in
-                                    if let item = newValue {
-                                        Task {
-                                            await imageViewModel.handleHeaderImageSelection(item)
-                                        }
-                                    }
-                                }
-                                .padding(.trailing, 32)
-                                .padding(.bottom, 16)
-                            }
-                        }
-                        
-                        // Profile image (overlapping bottom left)
-                        ZStack(alignment: .bottomTrailing) {
-                            if let profileImage = imageViewModel.profileImage {
-                                Image(uiImage: profileImage)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 100, height: 100)
-                                    .clipShape(Circle())
-                                    .overlay(Circle().stroke(Color.white, lineWidth: 4))
-                                    .shadow(radius: 4)
-                                    .offset(x: 32, y: 50)
-                            } else if let profileURL = authViewModel.currentUser?.profileImageURL {
-                                AsyncImage(url: URL(string: profileURL)) { image in
-                                    image
-                                        .resizable()
-                                        .scaledToFill()
-                                } placeholder: {
-                                    Image(systemName: "person.crop.circle.fill")
-                                        .resizable()
-                                        .scaledToFill()
-                                }
-                                .frame(width: 100, height: 100)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.white, lineWidth: 4))
-                                .shadow(radius: 4)
-                                .offset(x: 32, y: 50)
-                            } else {
-                                Image(systemName: "person.crop.circle.fill")
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 100, height: 100)
-                                    .clipShape(Circle())
-                                    .overlay(Circle().stroke(Color.white, lineWidth: 4))
-                                    .shadow(radius: 4)
-                                    .offset(x: 32, y: 50)
-                            }
-                            
-                            PhotosPicker(selection: $selectedProfileItem,
-                                       matching: .images,
-                                       photoLibrary: .shared()) {
-                                Image(systemName: "camera.fill")
-                                    .padding(6)
-                                    .background(Color.white.opacity(0.8))
-                                    .clipShape(Circle())
-                            }
-                            .onChange(of: selectedProfileItem) { _, newValue in
-                                if let item = newValue {
-                                    Task {
-                                        await imageViewModel.handleProfileImageSelection(item)
-                                    }
-                                }
-                            }
-                            .offset(x: 32, y: 54)
-                        }
-                    }
-
-                    // Add vertical spacing below the header/profile image
+                    ProfileHeaderSection(
+                        selectedHeaderItem: $selectedHeaderItem,
+                        selectedProfileItem: $selectedProfileItem,
+                        headerImage: authViewModel.headerImage,
+                        headerURL: authViewModel.currentUser?.headerImageURL,
+                        profileImage: authViewModel.profileImage,
+                        profileURL: authViewModel.currentUser?.profileImageURL,
+                        onHeaderImageSelected: handleHeaderImageSelection,
+                        onProfileImageSelected: handleProfileImageSelection
+                    )
+                    
+                    // Add vertical spacing
                     Spacer().frame(height: 60)
-
-                    // Profile Info and rest of the content
+                    
+                    // Profile Info
                     VStack(alignment: .leading, spacing: 4) {
                         Text(authViewModel.currentUser?.username ?? "Username")
                             .font(.title2)
@@ -240,7 +361,7 @@ struct ProfileView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
-
+                    
                     // Action Buttons
                     HStack(spacing: 10) {
                         Button(action: { showingEditProfile = true }) {
@@ -260,7 +381,7 @@ struct ProfileView: View {
                         }
                     }
                     .padding(.horizontal)
-
+                    
                     // Scrapbook Stats
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Scrapbook Stats")
@@ -342,7 +463,7 @@ struct ProfileView: View {
                 SettingsView()
             }
             .overlay {
-                if imageViewModel.isUploading {
+                if isUploading {
                     ProgressView()
                         .scaleEffect(1.5)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -350,8 +471,73 @@ struct ProfileView: View {
                 }
             }
         }
-        .onAppear {
-            imageViewModel.updateAuthViewModel(authViewModel)
+    }
+    
+    private func handleHeaderImageSelection(_ item: PhotosPickerItem) async {
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              let image = UIImage(data: data) else { return }
+        print("Header image selected")
+        isUploading = true
+        await uploadHeaderImage(image)
+        isUploading = false
+    }
+    
+    private func handleProfileImageSelection(_ item: PhotosPickerItem) async {
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              let image = UIImage(data: data) else { return }
+        print("📸 Profile image selected")
+        isUploading = true
+        await uploadProfileImage(image)
+        isUploading = false
+    }
+    
+    private func uploadHeaderImage(_ image: UIImage) async {
+        guard let userId = authViewModel.currentUser?.id else { 
+            print("Error: No user ID found")
+            return 
+        }
+        print("📸 Starting header image upload for user: \(userId)")
+        
+        do {
+            let path = "users/\(userId)/header.jpg"
+            print("📤 Uploading header image to path: \(path)")
+            let imageURL = try await StorageService.shared.uploadImage(image, path: path)
+            print("✅ Header image uploaded successfully. URL: \(imageURL)")
+            
+            var updatedUser = authViewModel.currentUser
+            updatedUser?.headerImageURL = imageURL
+            updatedUser?.updatedAt = Date()
+            if let user = updatedUser {
+                try await authViewModel.updateUser(user)
+                print("✅ User updated successfully with header image")
+            }
+        } catch {
+            print("❌ Error uploading header image: \(error)")
+        }
+    }
+    
+    private func uploadProfileImage(_ image: UIImage) async {
+        guard let userId = authViewModel.currentUser?.id else { 
+            print("❌ Error: No user ID found")
+            return 
+        }
+        print("📸 Starting profile image upload for user: \(userId)")
+        
+        do {
+            let path = "users/\(userId)/profile.jpg"
+            print("📤 Uploading profile image to path: \(path)")
+            let imageURL = try await StorageService.shared.uploadImage(image, path: path)
+            print("✅ Profile image uploaded successfully. URL: \(imageURL)")
+            
+            var updatedUser = authViewModel.currentUser
+            updatedUser?.profileImageURL = imageURL
+            updatedUser?.updatedAt = Date()
+            if let user = updatedUser {
+                try await authViewModel.updateUser(user)
+                print("✅ User updated successfully with profile image")
+            }
+        } catch {
+            print("❌ Error uploading profile image: \(error)")
         }
     }
 }

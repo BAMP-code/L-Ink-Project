@@ -10,6 +10,7 @@ import FirebaseFirestore
 
 struct PublicNotebook: Identifiable {
     let id = UUID()
+    let firestoreId: String  // Add this to store the Firestore document ID
     let title: String
     let author: String
     let authorImage: String
@@ -77,22 +78,37 @@ class FeedViewModel: ObservableObject {
                     
                     // Convert Firestore Timestamp to Date
                     let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
-                    let updatedAt = (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
                     
                     // Extract pages array
                     let pages = data["pages"] as? [[String: Any]] ?? []
                     
+                    // Extract likes array
+                    let likes = data["likes"] as? [String] ?? []
+                    
+                    // Extract and convert comments
+                    let commentsData = data["comments"] as? [[String: Any]] ?? []
+                    let comments = commentsData.compactMap { commentData -> NotebookComment? in
+                        guard let username = commentData["username"] as? String,
+                              let text = commentData["text"] as? String,
+                              let timestamp = (commentData["timestamp"] as? Timestamp)?.dateValue() else {
+                            return nil
+                        }
+                        return NotebookComment(username: username, text: text, timestamp: timestamp)
+                    }
+                    
                     return PublicNotebook(
+                        firestoreId: document.documentID,  // Store the Firestore document ID
                         title: data["title"] as? String ?? "",
                         author: data["ownerId"] as? String ?? "",
                         authorImage: "person.circle.fill",
                         coverImage: "Logo",
                         description: data["description"] as? String ?? "",
                         tags: [], // We can extract tags from description later if needed
-                        likes: 0,  // These could be added to the database schema later
-                        comments: [],
+                        likes: likes.count,
+                        comments: comments,
                         timestamp: createdAt,
                         pageCount: pages.count,
+                        isLiked: likes.contains(self?.currentUserId ?? ""),
                         prompts: []
                     )
                 }
@@ -122,7 +138,7 @@ class FeedViewModel: ObservableObject {
             // ML-based recommendation score
             let recommendationScore = recommendationEngine.getPredictedScore(
                 userId: currentUserId,
-                notebookId: notebook.id.uuidString
+                notebookId: notebook.firestoreId
             )
             
             // Combine all factors into final ranking score
@@ -171,7 +187,7 @@ class FeedViewModel: ObservableObject {
         score += Double(matchingTags.count) * 0.2
         
         // Check recency and frequency of interactions with this notebook
-        if let interactions = userInteractionHistory[notebook.id.uuidString] {
+        if let interactions = userInteractionHistory[notebook.firestoreId] {
             let now = Date()
             for interaction in interactions {
                 let hoursAgo = now.timeIntervalSince(interaction) / 3600
@@ -207,7 +223,7 @@ class FeedViewModel: ObservableObject {
         userInteractionHistory[notebookId, default: []].append(now)
         
         // Update user preferences based on interaction
-        if let notebook = notebooks.first(where: { $0.id.uuidString == notebookId }) {
+        if let notebook = notebooks.first(where: { $0.firestoreId == notebookId }) {
             userPreferences.formUnion(notebook.tags)
             
             // Add interaction to recommendation engine
@@ -228,7 +244,7 @@ class FeedViewModel: ObservableObject {
     
     // Update view count and time spent
     func updateViewMetrics(notebookId: String, timeSpentSeconds: Int) {
-        if let index = notebooks.firstIndex(where: { $0.id.uuidString == notebookId }) {
+        if let index = notebooks.firstIndex(where: { $0.firestoreId == notebookId }) {
             notebooks[index].viewCount += 1
             notebooks[index].timeSpentSeconds += timeSpentSeconds
             
@@ -249,7 +265,7 @@ class FeedViewModel: ObservableObject {
     
     // Update share count
     func incrementShareCount(for notebook: PublicNotebook) {
-        if let index = notebooks.firstIndex(where: { $0.id == notebook.id }) {
+        if let index = notebooks.firstIndex(where: { $0.firestoreId == notebook.firestoreId }) {
             notebooks[index].shareCount += 1
             calculateRankingScores()
         }
@@ -257,34 +273,74 @@ class FeedViewModel: ObservableObject {
     
     // Override existing toggleSave to update save count
     func toggleSave(for notebook: PublicNotebook) {
-        if let index = notebooks.firstIndex(where: { $0.id == notebook.id }) {
+        if let index = notebooks.firstIndex(where: { $0.firestoreId == notebook.firestoreId }) {
             notebooks[index].isSaved.toggle()
             if notebooks[index].isSaved {
                 notebooks[index].saveCount += 1
             }
-            trackInteraction(notebookId: notebook.id.uuidString, interactionType: "save")
+            trackInteraction(notebookId: notebook.firestoreId, interactionType: "save")
         }
     }
     
     // Override existing toggleLike to track interaction
     func toggleLike(for notebook: PublicNotebook) {
-        if let index = notebooks.firstIndex(where: { $0.id == notebook.id }) {
-            notebooks[index].isLiked.toggle()
-            notebooks[index].likes += notebooks[index].isLiked ? 1 : -1
-            trackInteraction(notebookId: notebook.id.uuidString, interactionType: "like")
+        guard let index = notebooks.firstIndex(where: { $0.firestoreId == notebook.firestoreId }) else { return }
+        
+        // Update local state
+        notebooks[index].isLiked.toggle()
+        notebooks[index].likes += notebooks[index].isLiked ? 1 : -1
+        
+        // Update Firestore directly using the document ID
+        let docRef = db.collection("notebooks").document(notebook.firestoreId)
+        
+        if notebooks[index].isLiked {
+            // Add like
+            docRef.updateData([
+                "likes": FieldValue.arrayUnion([currentUserId])
+            ]) { error in
+                if let error = error {
+                    print("Error adding like: \(error.localizedDescription)")
+                }
+            }
+        } else {
+            // Remove like
+            docRef.updateData([
+                "likes": FieldValue.arrayRemove([currentUserId])
+            ]) { error in
+                if let error = error {
+                    print("Error removing like: \(error.localizedDescription)")
+                }
+            }
         }
     }
     
     // Override existing addComment to track interaction
     func addComment(_ comment: String, to notebook: PublicNotebook) {
-        if let index = notebooks.firstIndex(where: { $0.id == notebook.id }) {
-            let newComment = NotebookComment(
-                username: "current_user",
-                text: comment,
-                timestamp: Date()
-            )
-            notebooks[index].comments.append(newComment)
-            trackInteraction(notebookId: notebook.id.uuidString, interactionType: "comment")
+        guard let index = notebooks.firstIndex(where: { $0.firestoreId == notebook.firestoreId }) else { return }
+        
+        let newComment = NotebookComment(
+            username: "current_user", // This should come from auth
+            text: comment,
+            timestamp: Date()
+        )
+        
+        // Update local state
+        notebooks[index].comments.append(newComment)
+        
+        // Update Firestore directly using the document ID
+        let docRef = db.collection("notebooks").document(notebook.firestoreId)
+        let commentData: [String: Any] = [
+            "username": newComment.username,
+            "text": newComment.text,
+            "timestamp": Timestamp(date: newComment.timestamp)
+        ]
+        
+        docRef.updateData([
+            "comments": FieldValue.arrayUnion([commentData])
+        ]) { error in
+            if let error = error {
+                print("Error adding comment: \(error.localizedDescription)")
+            }
         }
     }
     
@@ -616,7 +672,7 @@ struct PublicNotebookView: View {
         .onDisappear {
             if let startTime = viewStartTime {
                 let timeSpent = Int(Date().timeIntervalSince(startTime))
-                viewModel.updateViewMetrics(notebookId: notebook.id.uuidString, timeSpentSeconds: timeSpent)
+                viewModel.updateViewMetrics(notebookId: notebook.firestoreId, timeSpentSeconds: timeSpent)
             }
         }
     }

@@ -10,14 +10,19 @@ struct NotebookDetailView: View {
     @State private var rotation: Double = 0
     @State private var isFlipping = false
     @State private var isEditingPage = false
-    @State private var myCanvasView = PKCanvasView()
+    @State private var myDrawing = PKDrawing()
     @State private var myIsDrawing = false
     @State private var myTextBoxes: [(id: UUID, text: String, position: CGPoint)] = []
     @State private var myImages: [(id: UUID, image: UIImage, position: CGPoint)] = []
     @State private var myShowImageInsert = false
     @State private var showSystemImagePicker = false
     @State private var imageToAdd: UIImage? = nil
-
+    @State private var selectedTextBoxID: UUID? = nil
+    @State private var selectedImageID: UUID? = nil
+    @State private var drawingColors: [Color] = [.black, .red, .blue, .green, .orange]
+    @State private var selectedDrawingColor: Color = .black
+    @State private var editingTextBoxID: UUID? = nil
+    
     init(notebook: Notebook) {
         var notebookCopy = notebook
         // Remove welcome text from first page if present
@@ -28,15 +33,14 @@ struct NotebookDetailView: View {
         _viewModel = StateObject(wrappedValue: NotebookViewModel())
         _selectedPageIndex = State(initialValue: 0)
     }
-
+    
     var body: some View {
         VStack(spacing: 0) {
             // 3D Notebook View or Canvas
             ZStack {
                 if isEditingPage {
-                    // Canvas overlays should match the PageView size and position
                     ZStack(alignment: .center) {
-                        PageView(page: notebook.pages[selectedPageIndex], showWelcome: false)
+                        PageView(page: notebook.pages[selectedPageIndex], showWelcome: false, showCanvasElements: false)
                             .rotation3DEffect(
                                 .degrees(0), // No rotation in edit mode
                                 axis: (x: 0, y: 1, z: 0),
@@ -44,22 +48,60 @@ struct NotebookDetailView: View {
                                 perspective: 0.5
                             )
                             .opacity(1)
-                        MyDrawingCanvas(canvasView: $myCanvasView, isDrawingEnabled: myIsDrawing)
+                            .zIndex(0)
+                        MyDrawingCanvas(drawing: $myDrawing, isDrawingEnabled: myIsDrawing, drawingColor: selectedDrawingColor)
                             .background(Color.clear)
-                        // Text boxes
-                        ForEach($myTextBoxes, id: \ .id) { $box in
-                            MyCanvasTextBox(text: $box.text, position: box.position)
+                            .zIndex(myIsDrawing ? 2 : 0)
+                        if !myIsDrawing || (!myTextBoxes.isEmpty || !myImages.isEmpty) {
+                            ForEach($myTextBoxes, id: \.id) { $box in
+                                MyCanvasTextBox(
+                                    text: $box.text,
+                                    position: box.position,
+                                    selected: selectedTextBoxID == box.id,
+                                    isEditing: Binding(
+                                        get: { editingTextBoxID == box.id },
+                                        set: { newValue in editingTextBoxID = newValue ? box.id : nil }
+                                    ),
+                                    onSelect: {
+                                        selectedTextBoxID = box.id
+                                        selectedImageID = nil
+                                        editingTextBoxID = box.id
+                                    },
+                                    onDelete: { myTextBoxes.removeAll { $0.id == box.id } }
+                                )
+                                .zIndex(3)
+                            }
+                            ForEach(myImages, id: \.id) { img in
+                                MyCanvasImage(
+                                    image: img.image,
+                                    position: img.position,
+                                    selected: selectedImageID == img.id,
+                                    onSelect: {
+                                        selectedImageID = img.id
+                                        selectedTextBoxID = nil
+                                        editingTextBoxID = nil
+                                    },
+                                    onDelete: { myImages.removeAll { $0.id == img.id } }
+                                )
+                                .zIndex(3)
+                            }
                         }
-                        // Images
-                        ForEach(myImages, id: \ .id) { img in
-                            MyCanvasImage(image: img.image, position: img.position)
-                        }
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if editingTextBoxID != nil {
+                                    editingTextBoxID = nil
+                                } else {
+                                    selectedTextBoxID = nil
+                                    selectedImageID = nil
+                                }
+                            }
                     }
                     .frame(width: 360, height: 400)
                     .cornerRadius(12)
                     .shadow(radius: 2)
                 } else {
-                    PageView(page: notebook.pages[selectedPageIndex], showWelcome: false)
+                    PageView(page: notebook.pages[selectedPageIndex], showWelcome: false, showCanvasElements: true)
                         .rotation3DEffect(
                             .degrees(rotation),
                             axis: (x: 0, y: 1, z: 0),
@@ -79,31 +121,31 @@ struct NotebookDetailView: View {
                     }
                     .onEnded { value in
                         if !isEditingPage {
-                            if value.translation.width < -100 && selectedPageIndex < notebook.pages.count - 1 {
-                                withAnimation(.easeInOut(duration: 0.5)) {
-                                    rotation = -180
-                                    isFlipping = true
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                    selectedPageIndex += 1
-                                    saveLastViewedPage()
-                                    rotation = 0
-                                    isFlipping = false
-                                }
-                            } else if value.translation.width > 100 && selectedPageIndex > 0 {
-                                withAnimation(.easeInOut(duration: 0.5)) {
-                                    rotation = 180
-                                    isFlipping = true
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                    selectedPageIndex -= 1
-                                    saveLastViewedPage()
-                                    rotation = 0
-                                    isFlipping = false
-                                }
-                            } else {
-                                withAnimation {
-                                    rotation = 0
+                        if value.translation.width < -100 && selectedPageIndex < notebook.pages.count - 1 {
+                            withAnimation(.easeInOut(duration: 0.5)) {
+                                rotation = -180
+                                isFlipping = true
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                selectedPageIndex += 1
+                                saveLastViewedPage()
+                                rotation = 0
+                                isFlipping = false
+                            }
+                        } else if value.translation.width > 100 && selectedPageIndex > 0 {
+                            withAnimation(.easeInOut(duration: 0.5)) {
+                                rotation = 180
+                                isFlipping = true
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                selectedPageIndex -= 1
+                                saveLastViewedPage()
+                                rotation = 0
+                                isFlipping = false
+                            }
+                        } else {
+                            withAnimation {
+                                rotation = 0
                                 }
                             }
                         }
@@ -129,6 +171,24 @@ struct NotebookDetailView: View {
                     }
                 }
                 .padding(.vertical, 8)
+                // Color picker menu for drawing
+                if myIsDrawing {
+                    HStack(spacing: 20) {
+                        ForEach(drawingColors, id: \.self) { color in
+                            Circle()
+                                .fill(color)
+                                .frame(width: 28, height: 28)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.gray, lineWidth: selectedDrawingColor == color ? 3 : 1)
+                                )
+                                .onTapGesture {
+                                    selectedDrawingColor = color
+                                }
+                        }
+                    }
+                    .padding(.bottom, 8)
+                }
             }
             Text("Page \(selectedPageIndex + 1) of \(notebook.pages.count)")
                 .font(.system(size: 14, weight: .medium))
@@ -138,6 +198,10 @@ struct NotebookDetailView: View {
             Button(action: {
                 if isEditingPage {
                     saveCanvasToPage()
+                    // Clear all selection states when exiting edit mode
+                    selectedTextBoxID = nil
+                    selectedImageID = nil
+                    editingTextBoxID = nil
                 } else {
                     loadCanvasFromPage()
                 }
@@ -147,7 +211,7 @@ struct NotebookDetailView: View {
                     .font(.system(size: 22, weight: .bold))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding()
+            .padding()
                     .background(
                         LinearGradient(gradient: Gradient(colors: [Color.blue, Color.purple]), startPoint: .leading, endPoint: .trailing)
                     )
@@ -203,81 +267,239 @@ struct NotebookDetailView: View {
             saveLastViewedPage()
         }
     }
-
+    
     private func saveLastViewedPage() {
         var updatedNotebook = notebook
         updatedNotebook.lastViewedPageIndex = selectedPageIndex
         viewModel.updateNotebook(updatedNotebook)
     }
-
+    
     // New Drawing Canvas
     struct MyDrawingCanvas: UIViewRepresentable {
-        @Binding var canvasView: PKCanvasView
+        @Binding var drawing: PKDrawing
         var isDrawingEnabled: Bool
+        var drawingColor: Color
         func makeUIView(context: Context) -> PKCanvasView {
+            let canvasView = PKCanvasView()
             canvasView.drawingPolicy = .anyInput
             canvasView.isUserInteractionEnabled = isDrawingEnabled
             canvasView.backgroundColor = .clear
+            canvasView.tool = PKInkingTool(.pen, color: UIColor(drawingColor), width: 1)
+            canvasView.drawing = drawing
+            canvasView.delegate = context.coordinator
             return canvasView
         }
         func updateUIView(_ uiView: PKCanvasView, context: Context) {
             uiView.isUserInteractionEnabled = isDrawingEnabled
+            // Only set the tool if it changed
+            let currentTool = uiView.tool as? PKInkingTool
+            let newTool = PKInkingTool(.pen, color: UIColor(drawingColor), width: 1)
+            if currentTool?.color != newTool.color || currentTool?.inkType != newTool.inkType || currentTool?.width != newTool.width {
+                uiView.tool = newTool
+            }
+            if uiView.drawing != drawing {
+                uiView.drawing = drawing
+            }
+        }
+        func makeCoordinator() -> Coordinator {
+            Coordinator(self)
+        }
+        class Coordinator: NSObject, PKCanvasViewDelegate {
+            var parent: MyDrawingCanvas
+            init(_ parent: MyDrawingCanvas) { self.parent = parent }
+            func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+                parent.drawing = canvasView.drawing
+            }
         }
     }
 
     // New Draggable Text Box
     struct MyCanvasTextBox: View {
         @Binding var text: String
-        @GestureState private var dragOffset: CGSize = .zero
         @State private var position: CGPoint
-        init(text: Binding<String>, position: CGPoint) {
+        var selected: Bool
+        @Binding var isEditing: Bool
+        var onSelect: () -> Void
+        var onDelete: () -> Void
+        @GestureState private var dragOffset: CGSize = .zero
+        @State private var isMoving: Bool = false
+        @State private var dragStart: CGPoint? = nil
+        init(text: Binding<String>, position: CGPoint, selected: Bool, isEditing: Binding<Bool>, onSelect: @escaping () -> Void, onDelete: @escaping () -> Void) {
             self._text = text
             self._position = State(initialValue: position)
+            self.selected = selected
+            self._isEditing = isEditing
+            self.onSelect = onSelect
+            self.onDelete = onDelete
         }
         var body: some View {
-            TextField("Text", text: $text)
-                .padding(8)
-                .background(Color.white.opacity(0.8))
-                .cornerRadius(8)
-                .position(position)
-                .gesture(
-                    DragGesture()
-                        .updating($dragOffset) { value, state, _ in
-                            state = value.translation
+            ZStack(alignment: .topTrailing) {
+                if selected && isEditing {
+                    TextEditor(text: $text)
+                        .font(.body)
+                        .frame(minWidth: 60, maxWidth: 180, minHeight: 32)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(8)
+                        .background(Color.clear)
+                        .scrollContentBackground(.hidden)
+                        .cornerRadius(8)
+                        .onTapGesture { onSelect() }
+                } else {
+                    Text(text.isEmpty ? " " : text)
+                        .font(.body)
+                        .frame(minWidth: 60, maxWidth: 180, minHeight: 32, alignment: .topLeading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(8)
+                        .background(Color.clear)
+                        .cornerRadius(8)
+                        .onTapGesture {
+                            onSelect()
+                            isEditing = true
                         }
-                        .onEnded { value in
-                            position.x += value.translation.width
-                            position.y += value.translation.height
-                        }
-                )
+                        .gesture(
+                            DragGesture()
+                                .updating($dragOffset) { value, state, _ in
+                                    state = value.translation
+                                }
+                                .onChanged { _ in onSelect() }
+                                .onEnded { value in
+                                    position.x += value.translation.width
+                                    position.y += value.translation.height
+                                }
+                        )
+                }
+                if selected {
+                    // Delete button (top right)
+                    Button(action: onDelete) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.red)
+                            .background(Color.white)
+                            .clipShape(Circle())
+                    }
+                    .offset(x: 10, y: -10)
+                    // Move button (bottom right)
+                    Button(action: {}) {
+                        Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 22, height: 22)
+                            .foregroundColor(.blue)
+                            .background(Color.white)
+                            .clipShape(Circle())
+                            .shadow(radius: 1)
+                    }
+                    .offset(x: 10, y: 32)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                if dragStart == nil { dragStart = position }
+                                if let start = dragStart {
+                                    isMoving = true
+                                    position.x = start.x + value.translation.width
+                                    position.y = start.y + value.translation.height
+                                }
+                            }
+                            .onEnded { _ in
+                                isMoving = false
+                                dragStart = nil
+                            }
+                    )
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(style: StrokeStyle(lineWidth: 2, dash: [6]))
+                    .foregroundColor(selected ? Color.blue.opacity(0.7) : .clear)
+            )
+            .position(
+                x: position.x.isFinite ? position.x : 100,
+                y: position.y.isFinite ? position.y : 100
+            )
         }
     }
 
     // New Draggable Image
     struct MyCanvasImage: View {
         let image: UIImage
-        @GestureState private var dragOffset: CGSize = .zero
         @State private var position: CGPoint
-        init(image: UIImage, position: CGPoint) {
+        var selected: Bool
+        var onSelect: () -> Void
+        var onDelete: () -> Void
+        @GestureState private var dragOffset: CGSize = .zero
+        @State private var isMoving: Bool = false
+        @State private var dragStart: CGPoint? = nil
+        init(image: UIImage, position: CGPoint, selected: Bool, onSelect: @escaping () -> Void, onDelete: @escaping () -> Void) {
             self.image = image
             self._position = State(initialValue: position)
+            self.selected = selected
+            self.onSelect = onSelect
+            self.onDelete = onDelete
         }
         var body: some View {
-            Image(uiImage: image)
-                .resizable()
-                .frame(width: 100, height: 100)
-                .cornerRadius(8)
-                .position(position)
-                .gesture(
-                    DragGesture()
-                        .updating($dragOffset) { value, state, _ in
-                            state = value.translation
-                        }
-                        .onEnded { value in
-                            position.x += value.translation.width
-                            position.y += value.translation.height
-                        }
-                )
+            ZStack(alignment: .topTrailing) {
+                Image(uiImage: image)
+                    .resizable()
+                    .frame(width: 100, height: 100)
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(style: StrokeStyle(lineWidth: 2, dash: [6]))
+                            .foregroundColor(selected ? Color.blue.opacity(0.7) : .clear)
+                    )
+                    .gesture(
+                        DragGesture()
+                            .updating($dragOffset) { value, state, _ in
+                                state = value.translation
+                            }
+                            .onChanged { _ in onSelect() }
+                            .onEnded { value in
+                                position.x += value.translation.width
+                                position.y += value.translation.height
+                            }
+                    )
+                if selected {
+                    // Delete button (top right)
+                    Button(action: onDelete) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.red)
+                            .background(Color.white)
+                            .clipShape(Circle())
+                    }
+                    .offset(x: 10, y: -10)
+                    // Move button (bottom right)
+                    Button(action: {}) {
+                        Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 22, height: 22)
+                            .foregroundColor(.blue)
+                            .background(Color.white)
+                            .clipShape(Circle())
+                            .shadow(radius: 1)
+                    }
+                    .offset(x: 10, y: 90)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                if dragStart == nil { dragStart = position }
+                                if let start = dragStart {
+                                    isMoving = true
+                                    position.x = start.x + value.translation.width
+                                    position.y = start.y + value.translation.height
+                                }
+                            }
+                            .onEnded { _ in
+                                isMoving = false
+                                dragStart = nil
+                            }
+                    )
+                }
+            }
+            .position(
+                x: position.x.isFinite ? position.x : 100,
+                y: position.y.isFinite ? position.y : 100
+            )
+            .onTapGesture { onSelect() }
         }
     }
 
@@ -295,16 +517,31 @@ struct NotebookDetailView: View {
 
     // Save canvas state to page when toggling out of edit mode
     private func saveCanvasToPage() {
-        let drawingData = myCanvasView.drawing.dataRepresentation()
-        let textBoxModels: [CanvasTextBoxModel] = myTextBoxes.map { CanvasTextBoxModel(id: $0.id, text: $0.text, position: CGPointCodable($0.position)) }
-        let imageModels: [CanvasImageModel] = myImages.compactMap { img in
-            img.image.pngData().map { CanvasImageModel(id: img.id, imageData: $0, position: CGPointCodable(img.position)) }
+        let drawingData = myDrawing.dataRepresentation()
+        let textBoxModels: [CanvasTextBoxModel] = myTextBoxes.map { box in
+            CanvasTextBoxModel(
+                id: box.id,
+                text: box.text,
+                position: CGPointCodable(box.position)
+            )
         }
+        let imageModels: [CanvasImageModel] = myImages.compactMap { img in
+            if let imageData = img.image.pngData() {
+                return CanvasImageModel(
+                    id: img.id,
+                    imageData: imageData,
+                    position: CGPointCodable(img.position)
+                )
+            }
+            return nil
+        }
+        
         // Create updated page
         var updatedPage = notebook.pages[selectedPageIndex]
         updatedPage.drawingData = drawingData
         updatedPage.textBoxes = textBoxModels
         updatedPage.images = imageModels
+        updatedPage.updatedAt = Date()
 
         // Update the notebook's pages array
         var updatedNotebook = notebook
@@ -320,12 +557,20 @@ struct NotebookDetailView: View {
     // Load canvas state from page when entering edit mode or flipping pages
     private func loadCanvasFromPage() {
         let page = notebook.pages[selectedPageIndex]
+        
+        // Load drawing
         if let data = page.drawingData, let drawing = try? PKDrawing(data: data) {
-            myCanvasView.drawing = drawing
+            myDrawing = drawing
         } else {
-            myCanvasView.drawing = PKDrawing()
+            myDrawing = PKDrawing()
         }
-        myTextBoxes = page.textBoxes?.map { ($0.id, $0.text, $0.position.cgPoint) } ?? []
+        
+        // Load text boxes with their positions
+        myTextBoxes = page.textBoxes?.map { box in
+            (box.id, box.text, box.position.cgPoint)
+        } ?? []
+        
+        // Load images with their positions
         myImages = page.images?.compactMap { model in
             if let image = UIImage(data: model.imageData) {
                 return (model.id, image, model.position.cgPoint)
@@ -446,6 +691,7 @@ struct NotebookCover: View {
 struct PageView: View {
     let page: Page
     var showWelcome: Bool = false
+    var showCanvasElements: Bool = true
     
     var body: some View {
         ZStack {
@@ -481,15 +727,45 @@ struct PageView: View {
                             .font(.body)
                             .foregroundColor(.black.opacity(0.8))
                             .padding()
-                    } else {
-                        // For ink pages, we'll show a preview of the drawing
-                        if let data = Data(base64Encoded: page.content),
-                           let drawing = try? PKDrawing(data: data) {
-                            DrawingPreview(drawing: drawing)
-                        } else {
-                            Text("No drawing")
-                                .foregroundColor(.gray)
+                    }
+                    
+                    // Display saved text boxes
+                    if showCanvasElements, let textBoxes = page.textBoxes {
+                        ForEach(textBoxes) { box in
+                            Text(box.text)
+                                .font(.body)
+                                .frame(minWidth: 60, maxWidth: 180, minHeight: 32, alignment: .topLeading)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(8)
+                                .background(Color.clear)
+                                .cornerRadius(8)
+                                .position(
+                                    x: box.position.x.isFinite ? box.position.x : 100,
+                                    y: box.position.y.isFinite ? box.position.y : 100
+                                )
                         }
+                    }
+                    
+                    // Display saved images
+                    if showCanvasElements, let images = page.images {
+                        ForEach(images) { img in
+                            if let uiImage = UIImage(data: img.imageData) {
+                                Image(uiImage: uiImage)
+                                    .resizable()
+                                    .frame(width: 100, height: 100)
+                                    .cornerRadius(8)
+                                    .position(
+                                        x: img.position.x.isFinite ? img.position.x : 100,
+                                        y: img.position.y.isFinite ? img.position.y : 100
+                                    )
+                            }
+                        }
+                    }
+                    
+                    // Display drawing if present
+                    if let drawingData = page.drawingData,
+                       let drawing = try? PKDrawing(data: drawingData) {
+                        DrawingPreview(drawing: drawing)
                     }
                 }
             }
@@ -587,3 +863,7 @@ struct InkCanvasView: UIViewRepresentable {
     
     func updateUIView(_ uiView: PKCanvasView, context: Context) {}
 }
+
+
+
+

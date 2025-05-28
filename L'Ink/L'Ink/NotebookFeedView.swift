@@ -7,6 +7,7 @@
 
 import SwiftUI
 import FirebaseFirestore
+import FirebaseAuth
 
 struct PublicNotebook: Identifiable {
     let id = UUID()
@@ -48,13 +49,18 @@ class FeedViewModel: ObservableObject {
     private var userInteractionHistory: [String: [Date]] = [:] // notebookId: [interaction timestamps]
     private var userPreferences: Set<String> = [] // tags user has shown interest in
     private let recommendationEngine = RecommendationEngine()
-    private let currentUserId: String // In a real app, this would come from authentication
+    private let currentUserId: String
     
     private let db = Firestore.firestore()
     
     init() {
-        // In a real app, this would come from authentication
-        self.currentUserId = UUID().uuidString
+        // Get the current user ID from Firebase Auth
+        if let user = Auth.auth().currentUser {
+            self.currentUserId = user.uid
+        } else {
+            self.currentUserId = ""
+            print("No authenticated user found")
+        }
         fetchNotebooks()
         calculateRankingScores()
     }
@@ -318,28 +324,39 @@ class FeedViewModel: ObservableObject {
     func addComment(_ comment: String, to notebook: PublicNotebook) {
         guard let index = notebooks.firstIndex(where: { $0.firestoreId == notebook.firestoreId }) else { return }
         
-        let newComment = NotebookComment(
-            username: "current_user", // This should come from auth
-            text: comment,
-            timestamp: Date()
-        )
-        
-        // Update local state
-        notebooks[index].comments.append(newComment)
-        
-        // Update Firestore directly using the document ID
-        let docRef = db.collection("notebooks").document(notebook.firestoreId)
-        let commentData: [String: Any] = [
-            "username": newComment.username,
-            "text": newComment.text,
-            "timestamp": Timestamp(date: newComment.timestamp)
-        ]
-        
-        docRef.updateData([
-            "comments": FieldValue.arrayUnion([commentData])
-        ]) { error in
-            if let error = error {
-                print("Error adding comment: \(error.localizedDescription)")
+        // First fetch the user's data to get the username
+        let userRef = db.collection("users").document(currentUserId)
+        userRef.getDocument { [weak self] snapshot, error in
+            guard let self = self,
+                  let userData = snapshot?.data(),
+                  let username = userData["username"] as? String else {
+                print("Error fetching username: \(error?.localizedDescription ?? "Unknown error")")
+                return
+            }
+            
+            let newComment = NotebookComment(
+                username: username, // Using the actual username from Firestore
+                text: comment,
+                timestamp: Date()
+            )
+            
+            // Update local state
+            self.notebooks[index].comments.append(newComment)
+            
+            // Update Firestore directly using the document ID
+            let docRef = self.db.collection("notebooks").document(notebook.firestoreId)
+            let commentData: [String: Any] = [
+                "username": username, // Using the actual username
+                "text": newComment.text,
+                "timestamp": Timestamp(date: newComment.timestamp)
+            ]
+            
+            docRef.updateData([
+                "comments": FieldValue.arrayUnion([commentData])
+            ]) { error in
+                if let error = error {
+                    print("Error adding comment: \(error.localizedDescription)")
+                }
             }
         }
     }

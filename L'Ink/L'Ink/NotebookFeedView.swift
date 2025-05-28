@@ -155,7 +155,11 @@ class FeedViewModel: ObservableObject {
                         return NotebookComment(username: username, text: text, timestamp: timestamp)
                     }
                     
-                    return PublicNotebook(
+                    // Extract view count and time spent
+                    let viewCount = data["viewCount"] as? Int ?? 0
+                    let timeSpentSeconds = data["timeSpentSeconds"] as? Int ?? 0
+                    
+                    var notebook = PublicNotebook(
                         firestoreId: document.documentID,
                         title: data["title"] as? String ?? "",
                         author: data["ownerId"] as? String ?? "",
@@ -170,7 +174,16 @@ class FeedViewModel: ObservableObject {
                         isLiked: self?.likedNotebooks.contains(document.documentID) ?? false,
                         prompts: []
                     )
+                    
+                    // Set the metrics
+                    notebook.viewCount = viewCount
+                    notebook.timeSpentSeconds = timeSpentSeconds
+                    
+                    return notebook
                 }
+                
+                // Calculate ranking scores and sort
+                self?.calculateRankingScores()
             }
     }
     
@@ -194,25 +207,41 @@ class FeedViewModel: ObservableObject {
             // Quality score
             let qualityScore = calculateQualityScore(notebook)
             
-            // ML-based recommendation score
-            let recommendationScore = recommendationEngine.getPredictedScore(
-                userId: currentUserId,
-                notebookId: notebook.firestoreId
-            )
+            // ML-based recommendation score (simplified for now)
+            let recommendationScore = 0.5 // Default middle score since we don't have ML yet
             
             // Combine all factors into final ranking score
             let finalScore = (
                 0.3 * engagementScore +
                 0.2 * userRelevanceScore +
                 0.2 * qualityScore +
-                0.3 * recommendationScore // Add ML-based score
+                0.3 * recommendationScore
             ) * timeDecay
             
             notebooks[i].rankingScore = finalScore
+            
+            // Debug logging
+            print("\nRanking components for notebook '\(notebook.title)':")
+            print("Time decay (age: \(Int(ageInHours))h): \(String(format: "%.3f", timeDecay))")
+            print("Engagement score: \(String(format: "%.3f", engagementScore))")
+            print("- Views: \(notebook.viewCount)")
+            print("- Likes: \(notebook.likes)")
+            print("- Comments: \(notebook.comments.count)")
+            print("- Time spent: \(notebook.timeSpentSeconds)s")
+            print("User relevance: \(String(format: "%.3f", userRelevanceScore))")
+            print("Quality score: \(String(format: "%.3f", qualityScore))")
+            print("Final ranking score: \(String(format: "%.3f", finalScore))")
+            print("----------------------------------------")
         }
         
         // Sort notebooks by ranking score
         notebooks.sort { $0.rankingScore > $1.rankingScore }
+        
+        // Debug log final order
+        print("\nFinal notebook order:")
+        for notebook in notebooks {
+            print("\(notebook.title): \(String(format: "%.3f", notebook.rankingScore))")
+        }
     }
     
     // Calculate engagement score based on user interactions
@@ -220,19 +249,15 @@ class FeedViewModel: ObservableObject {
         let viewWeight = 1.0
         let likeWeight = 2.0
         let commentWeight = 3.0
-        let saveWeight = 4.0
-        let shareWeight = 2.5
         let timeSpentWeight = 0.001 // per second
         
         let viewScore = Double(notebook.viewCount) * viewWeight
         let likeScore = Double(notebook.likes) * likeWeight
         let commentScore = Double(notebook.comments.count) * commentWeight
-        let saveScore = Double(notebook.saveCount) * saveWeight
-        let shareScore = Double(notebook.shareCount) * shareWeight
         let timeSpentScore = Double(notebook.timeSpentSeconds) * timeSpentWeight
         
-        let totalScore = viewScore + likeScore + commentScore + saveScore + shareScore + timeSpentScore
-        let normalizedScore = min(1.0, totalScore / 1000.0) // Normalize to 0-1 range
+        let totalScore = viewScore + likeScore + commentScore + timeSpentScore
+        let normalizedScore = min(1.0, totalScore / 100.0) // Normalize to 0-1 range
         
         return normalizedScore
     }
@@ -264,16 +289,19 @@ class FeedViewModel: ObservableObject {
         var score = 0.0
         
         // Content length/depth score
-        score += min(1.0, Double(notebook.pages.count) / 20.0) * 0.4
+        let pageScore = min(1.0, Double(notebook.pages.count) / 10.0) * 0.4
         
         // Description quality score
         let descriptionWords = notebook.description.split(separator: " ").count
-        score += min(1.0, Double(descriptionWords) / 30.0) * 0.3
+        let descriptionScore = min(1.0, Double(descriptionWords) / 20.0) * 0.3
         
-        // Prompts quality score
-        score += min(1.0, Double(notebook.prompts.count) / 5.0) * 0.3
+        // Average content length score
+        let avgContentLength = notebook.pages.reduce(0) { $0 + $1.content.count } / max(1, notebook.pages.count)
+        let contentScore = min(1.0, Double(avgContentLength) / 500.0) * 0.3
         
-        return score
+        score = pageScore + descriptionScore + contentScore
+        
+        return min(1.0, score)
     }
     
     // Track user interaction with a notebook

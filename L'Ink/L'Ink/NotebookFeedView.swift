@@ -627,42 +627,225 @@ struct NotebookFeedView: View {
     @StateObject private var viewModel = FeedViewModel()
     @State private var isRefreshing = false
     @State private var showingShareSheet = false
+    @State private var selectedNotebook: PublicNotebook? = nil
+    @State private var selectedPageIndex: Int = 0
+    @State private var rotation: Double = 0
+    @State private var isFlipping = false
     
     var body: some View {
         NavigationView {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(viewModel.notebooks) { notebook in
-                        PublicNotebookView(notebook: notebook, viewModel: viewModel)
-                            .padding(.bottom, 8)
+            ZStack {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(viewModel.notebooks) { notebook in
+                            PublicNotebookView(notebook: notebook, viewModel: viewModel, selectedNotebook: $selectedNotebook)
+                                .padding(.bottom, 8)
+                        }
+                    }
+                    .blur(radius: selectedNotebook != nil ? 10 : 0)
+                }
+                .refreshable {
+                    await refreshData()
+                }
+                .navigationTitle("Explore")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Image("Logo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 30, height: 30)
+                            .clipShape(Circle())
+                    }
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button(action: {
+                            showingShareSheet = true
+                        }) {
+                            Image(systemName: "square.and.pencil")
+                                .font(.system(size: 24))
+                                .foregroundColor(.blue)
+                        }
                     }
                 }
-            }
-            .refreshable {
-                await refreshData()
-            }
-            .navigationTitle("Explore")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Image("Logo")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 30, height: 30)
-                        .clipShape(Circle())
+                .sheet(isPresented: $showingShareSheet) {
+                    ShareNotebookView(viewModel: viewModel)
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        showingShareSheet = true
-                    }) {
-                        Image(systemName: "square.and.pencil")
-                            .font(.system(size: 24))
-                            .foregroundColor(.blue)
+                
+                // Expanded notebook view overlay
+                if let selectedNotebook = selectedNotebook {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.spring()) {
+                                self.selectedNotebook = nil
+                                self.selectedPageIndex = 0
+                                self.rotation = 0
+                            }
+                        }
+                    
+                    VStack(spacing: 0) {
+                        // Page selector header
+                        HStack {
+                            Text("Page \(selectedPageIndex + 1) of \(selectedNotebook.pages.count + 1)")
+                                .font(.headline)
+                            Spacer()
+                            Button(action: {
+                                withAnimation(.spring()) {
+                                    self.selectedNotebook = nil
+                                    self.selectedPageIndex = 0
+                                    self.rotation = 0
+                                }
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.gray)
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemBackground))
+                        
+                        // 3D Notebook View
+                        ZStack {
+                            // Cover Page (Index 0)
+                            if selectedPageIndex == 0 {
+                                VStack {
+                                    Text(selectedNotebook.title)
+                                        .font(.title2)
+                                        .fontWeight(.bold)
+                                        .multilineTextAlignment(.center)
+                                        .padding()
+                                    
+                                    Image(selectedNotebook.coverImage)
+                                        .resizable()
+                                        .aspectRatio(4/5, contentMode: .fit)
+                                    
+                                    Text(selectedNotebook.feedDescription)
+                                        .font(.body)
+                                        .padding()
+                                        .multilineTextAlignment(.center)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .background(Color.white)
+                                .cornerRadius(12)
+                                .rotation3DEffect(
+                                    .degrees(rotation),
+                                    axis: (x: 0, y: 1, z: 0),
+                                    anchor: .trailing,
+                                    perspective: 0.5
+                                )
+                            }
+                            
+                            // Content Pages (Index 1 onwards)
+                            if selectedPageIndex > 0 && selectedPageIndex - 1 < selectedNotebook.pages.count {
+                                VStack {
+                                    Text(selectedNotebook.pages[selectedPageIndex - 1].content)
+                                        .padding()
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .background(Color.white)
+                                .cornerRadius(12)
+                                .rotation3DEffect(
+                                    .degrees(rotation),
+                                    axis: (x: 0, y: 1, z: 0),
+                                    anchor: .trailing,
+                                    perspective: 0.5
+                                )
+                            }
+                        }
+                        .frame(height: 500)
+                        .gesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    if !isFlipping {
+                                        rotation = Double(value.translation.width / 2)
+                                    }
+                                }
+                                .onEnded { value in
+                                    // Add 1 to account for cover page
+                                    if value.translation.width < -100 && selectedPageIndex < selectedNotebook.pages.count {
+                                        // Swipe left -> go forward
+                                        withAnimation(.easeInOut(duration: 0.5)) {
+                                            rotation = 180
+                                            isFlipping = true
+                                        }
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                            selectedPageIndex += 1
+                                            rotation = 0
+                                            isFlipping = false
+                                        }
+                                    } else if value.translation.width > 100 && selectedPageIndex > 0 {
+                                        // Swipe right -> go backward
+                                        withAnimation(.easeInOut(duration: 0.5)) {
+                                            rotation = -180
+                                            isFlipping = true
+                                        }
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                            selectedPageIndex -= 1
+                                            rotation = 0
+                                            isFlipping = false
+                                        }
+                                    } else {
+                                        withAnimation {
+                                            rotation = 0
+                                        }
+                                    }
+                                }
+                        )
+                        
+                        // Page Navigation
+                        HStack {
+                            Button(action: {
+                                if selectedPageIndex > 0 {
+                                    // Left arrow: go back
+                                    withAnimation(.easeInOut(duration: 0.5)) {
+                                        rotation = 180
+                                        isFlipping = true
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                        selectedPageIndex -= 1
+                                        rotation = 0
+                                        isFlipping = false
+                                    }
+                                }
+                            }) {
+                                Image(systemName: "chevron.left.circle.fill")
+                                    .font(.title)
+                                    .foregroundColor(selectedPageIndex > 0 ? .blue : .gray)
+                            }
+                            .disabled(selectedPageIndex == 0)
+                            
+                            Spacer()
+                            
+                            Button(action: {
+                                if selectedPageIndex < selectedNotebook.pages.count {
+                                    // Right arrow: go forward
+                                    withAnimation(.easeInOut(duration: 0.5)) {
+                                        rotation = -180
+                                        isFlipping = true
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                        selectedPageIndex += 1
+                                        rotation = 0
+                                        isFlipping = false
+                                    }
+                                }
+                            }) {
+                                Image(systemName: "chevron.right.circle.fill")
+                                    .font(.title)
+                                    .foregroundColor(selectedPageIndex < selectedNotebook.pages.count ? .blue : .gray)
+                            }
+                            .disabled(selectedPageIndex == selectedNotebook.pages.count)
+                        }
+                        .padding()
+                        .background(Color(.systemBackground))
                     }
+                    .background(Color(.systemBackground))
+                    .cornerRadius(20)
+                    .shadow(radius: 10)
+                    .padding()
+                    .transition(.scale.combined(with: .opacity))
                 }
-            }
-            .sheet(isPresented: $showingShareSheet) {
-                ShareNotebookView(viewModel: viewModel)
             }
         }
     }
@@ -875,16 +1058,16 @@ struct PublicNotebookDetailView: View {
                         Image(notebook.coverImage)
                             .resizable()
                             .aspectRatio(4/5, contentMode: .fit)
+                        .rotation3DEffect(
+                            .degrees(rotation),
+                            axis: (x: 0, y: 1, z: 0),
+                            anchor: .trailing,
+                            perspective: 0.5
+                        )
                     }
                     .frame(maxWidth: .infinity)
                     .background(Color.white)
                     .cornerRadius(12)
-                    .rotation3DEffect(
-                        .degrees(rotation),
-                        axis: (x: 0, y: 1, z: 0),
-                        anchor: .trailing,
-                        perspective: 0.5
-                    )
                 }
 
                 // Content Pages (Index 1 onwards)
@@ -893,16 +1076,16 @@ struct PublicNotebookDetailView: View {
                         Text(notebook.pages[selectedPageIndex - 1].content)
                             .padding()
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .rotation3DEffect(
+                            .degrees(rotation),
+                            axis: (x: 0, y: 1, z: 0),
+                            anchor: .trailing,
+                            perspective: 0.5
+                        )
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color.white)
                     .cornerRadius(12)
-                    .rotation3DEffect(
-                        .degrees(rotation),
-                        axis: (x: 0, y: 1, z: 0),
-                        anchor: .trailing,
-                        perspective: 0.5
-                    )
                 }
             }
             .frame(height: 500)
@@ -996,131 +1179,134 @@ struct PublicNotebookDetailView: View {
 struct PublicNotebookView: View {
     let notebook: PublicNotebook
     @ObservedObject var viewModel: FeedViewModel
+    @Binding var selectedNotebook: PublicNotebook?
     @State private var showingComments = false
     @State private var newComment = ""
     @State private var viewStartTime: Date? = nil
     
     var body: some View {
-        NavigationLink(destination: PublicNotebookDetailView(notebook: notebook)) {
-            VStack(alignment: .leading, spacing: 8) {
-                // Notebook Header
-                HStack {
-                    if let profileImageURL = viewModel.userProfileImages[notebook.author] {
-                        AsyncImage(url: URL(string: profileImageURL)) { image in
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        } placeholder: {
-                            Image(systemName: "person.circle.fill")
-                                .resizable()
-                                .foregroundColor(.gray)
-                        }
-                        .frame(width: 32, height: 32)
-                        .clipShape(Circle())
-                    } else {
+        VStack(alignment: .leading, spacing: 8) {
+            // Notebook Header
+            HStack {
+                if let profileImageURL = viewModel.userProfileImages[notebook.author] {
+                    AsyncImage(url: URL(string: profileImageURL)) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } placeholder: {
                         Image(systemName: "person.circle.fill")
                             .resizable()
-                            .frame(width: 32, height: 32)
                             .foregroundColor(.gray)
                     }
-
-                    VStack(alignment: .leading) {
-                        Text(notebook.title)
-                            .font(.headline)
-                        Text("by \(notebook.author)")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                    }
-
-                    Spacer()
-
-                    Button(action: {}) {
-                        Image(systemName: "ellipsis")
-                    }
+                    .frame(width: 32, height: 32)
+                    .clipShape(Circle())
+                } else {
+                    Image(systemName: "person.circle.fill")
+                        .resizable()
+                        .frame(width: 32, height: 32)
+                        .foregroundColor(.gray)
                 }
+                
+                VStack(alignment: .leading) {
+                    Text(notebook.title)
+                        .font(.headline)
+                    Text("by \(notebook.author)")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                
+                Spacer()
+                
+                Button(action: {}) {
+                    Image(systemName: "ellipsis")
+                }
+            }
+            .padding(.horizontal)
+            
+            // Notebook Cover
+            Image(notebook.coverImage)
+                .resizable()
+                .aspectRatio(4/5, contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .cornerRadius(12)
                 .padding(.horizontal)
-
-                // Notebook Cover
-                Image(notebook.coverImage)
-                    .resizable()
-                    .aspectRatio(4/5, contentMode: .fit)
-                    .frame(maxWidth: .infinity)
-                    .cornerRadius(12)
-                    .padding(.horizontal)
-
-                // Action Buttons
-                HStack(spacing: 16) {
-                    Button(action: { viewModel.toggleLike(for: notebook) }) {
-                        Image(systemName: notebook.isLiked ? "heart.fill" : "heart")
-                            .foregroundColor(notebook.isLiked ? .red : .primary)
-                    }
-                    
-                    Button(action: { showingComments = true }) {
-                        Image(systemName: "message")
-                    }
-                    
-                    Button(action: {
-                        viewModel.incrementShareCount(for: notebook)
-                        // Add your share sheet implementation here
-                    }) {
-                        Image(systemName: "square.and.arrow.up")
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: { viewModel.toggleSave(for: notebook) }) {
-                        Image(systemName: notebook.isSaved ? "bookmark.fill" : "bookmark")
+                .onTapGesture {
+                    withAnimation(.spring()) {
+                        selectedNotebook = notebook
                     }
                 }
-                .font(.system(size: 20))
+            
+            // Action Buttons
+            HStack(spacing: 16) {
+                Button(action: { viewModel.toggleLike(for: notebook) }) {
+                    Image(systemName: notebook.isLiked ? "heart.fill" : "heart")
+                        .foregroundColor(notebook.isLiked ? .red : .primary)
+                }
+                
+                Button(action: { showingComments = true }) {
+                    Image(systemName: "message")
+                }
+                
+                Button(action: {
+                    viewModel.incrementShareCount(for: notebook)
+                }) {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                
+                Spacer()
+                
+                Button(action: { viewModel.toggleSave(for: notebook) }) {
+                    Image(systemName: notebook.isSaved ? "bookmark.fill" : "bookmark")
+                }
+            }
+            .font(.system(size: 20))
+            .padding(.horizontal)
+            
+            // Likes
+            Text("\(notebook.likes) likes")
+                .font(.headline)
                 .padding(.horizontal)
-                
-                // Likes
-                Text("\(notebook.likes) likes")
-                    .font(.headline)
-                    .padding(.horizontal)
-                
-                // Description
-                Text(notebook.description)
-                    .font(.body)
-                    .padding(.horizontal)
-                
-                // Tags
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack {
-                        ForEach(notebook.tags, id: \.self) { tag in
-                            Text("#\(tag)")
-                                .font(.subheadline)
-                                .foregroundColor(.blue)
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-                
-                // Notebook Info
+            
+            // Description
+            Text(notebook.description)
+                .font(.body)
+                .padding(.horizontal)
+            
+            // Tags
+            ScrollView(.horizontal, showsIndicators: false) {
                 HStack {
-                    Image(systemName: "doc.text")
-                    Text("\(notebook.pages.count) pages")
+                    ForEach(notebook.tags, id: \.self) { tag in
+                        Text("#\(tag)")
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                    }
+                }
+                .padding(.horizontal)
+            }
+            
+            // Notebook Info
+            HStack {
+                Image(systemName: "doc.text")
+                Text("\(notebook.pages.count) pages")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+            }
+            .padding(.horizontal)
+            
+            // Timestamp
+            Text(notebook.timestamp, formatter: DateFormatter.feedDate)
+                .font(.caption)
+                .foregroundColor(.gray)
+                .padding(.horizontal)
+            
+            // Comments Preview
+            if !notebook.comments.isEmpty {
+                Button(action: { showingComments = true }) {
+                    Text("View all \(notebook.comments.count) comments")
                         .font(.subheadline)
                         .foregroundColor(.gray)
                 }
                 .padding(.horizontal)
-                
-                // Timestamp
-                Text(notebook.timestamp, formatter: DateFormatter.feedDate)
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                    .padding(.horizontal)
-                
-                // Comments Preview
-                if !notebook.comments.isEmpty {
-                    Button(action: { showingComments = true }) {
-                        Text("View all \(notebook.comments.count) comments")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                    }
-                    .padding(.horizontal)
-                }
             }
         }
         .buttonStyle(PlainButtonStyle())
@@ -1217,4 +1403,19 @@ extension DateFormatter {
         formatter.dateFormat = "MMM d, yyyy"
         return formatter
     }()
+}
+
+// Helper for getting text size (Might be needed for precise positioning if we don't use .position() directly)
+extension String {
+    func heightOfString(usingFont font: UIFont) -> CGFloat {
+        let fontAttributes = [NSAttributedString.Key.font: font]
+        let boundingRect = (self as NSString).boundingRect(with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude), options: .usesLineFragmentOrigin, attributes: fontAttributes, context: nil)
+        return ceil(boundingRect.height)
+    }
+    
+    func widthOfString(usingFont font: UIFont) -> CGFloat {
+        let fontAttributes = [NSAttributedString.Key.font: font]
+        let boundingRect = (self as NSString).boundingRect(with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude), options: .usesLineFragmentOrigin, attributes: fontAttributes, context: nil)
+        return ceil(boundingRect.width)
+    }
 }

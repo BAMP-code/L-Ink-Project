@@ -459,28 +459,6 @@ struct ProfileView: View {
                         }
                     }
                     .padding(.horizontal)
-
-                    // Liked Notebooks
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Favorite Notebooks")
-                            .font(.headline)
-                        if favoriteNotebooks.isEmpty {
-                            Text("No favorite notebooks yet")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        } else {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack {
-                                    ForEach(favoriteNotebooks) { notebook in
-                                        NavigationLink(destination: NotebookDetailView(notebook: notebook)) {
-                                            NotebookCardView(title: notebook.title)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
                 }
                 .padding(.vertical)
             }
@@ -759,6 +737,7 @@ struct SettingsView: View {
     @AppStorage("isDarkMode") private var isDarkMode = false
     @AppStorage("notificationsEnabled") private var notificationsEnabled = true
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject var authViewModel: AuthViewModel
     
     var body: some View {
         NavigationView {
@@ -791,6 +770,20 @@ struct SettingsView: View {
                     
                     Link("Terms of Service", destination: URL(string: "https://yourwebsite.com/terms")!)
                     Link("Privacy Policy", destination: URL(string: "https://yourwebsite.com/privacy")!)
+                }
+                
+                // Logout Section
+                Section {
+                    Button(role: .destructive, action: {
+                        authViewModel.signOut()
+                        presentationMode.wrappedValue.dismiss() // Dismiss settings view after logout
+                    }) {
+                        HStack {
+                            Spacer()
+                            Text("Log Out")
+                            Spacer()
+                        }
+                    }
                 }
             }
             .navigationTitle("Settings")

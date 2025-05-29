@@ -30,11 +30,10 @@ struct SignUpView: View {
             GeometryReader { geometry in
                 ScrollView {
                     VStack(spacing: 20) {
-                        Image(systemName: "book.circle.fill")
+                        Image("Logo")
                             .resizable()
                             .scaledToFit()
                             .frame(width: 100, height: 100)
-                            .foregroundColor(.blue)
                         
                         Text("Create Account")
                             .font(.largeTitle)

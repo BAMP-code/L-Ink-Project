@@ -31,6 +31,22 @@ struct NotebookDetailView: View {
     
     var body: some View {
         VStack(spacing: 0) {
+            // Reserve space for edit menu in both modes
+            if isEditingPage {
+                HStack(spacing: 32) {
+                    Button(action: { addMyTextBox() }) {
+                        Image(systemName: "textformat")
+                            .font(.title2)
+                    }
+                    Button(action: { showSystemImagePicker = true }) {
+                        Image(systemName: "photo")
+                            .font(.title2)
+                    }
+                }
+                .padding(.vertical, 8)
+            } else {
+                Spacer().frame(height: 60)
+            }
             // 3D Notebook View or Canvas
             ZStack {
                 if isEditingPage {
@@ -48,7 +64,7 @@ struct NotebookDetailView: View {
                             ForEach($myTextBoxes, id: \.id) { $box in
                                 MyCanvasTextBox(
                                     text: $box.text,
-                                    position: box.position,
+                                    position: $box.position,
                                     selected: selectedTextBoxID == box.id,
                                     isEditing: Binding(
                                         get: { editingTextBoxID == box.id },
@@ -63,10 +79,10 @@ struct NotebookDetailView: View {
                                 )
                                 .zIndex(3)
                             }
-                            ForEach(myImages, id: \.id) { img in
+                            ForEach($myImages, id: \.id) { $img in
                                 MyCanvasImage(
                                     image: img.image,
-                                    position: img.position,
+                                    position: $img.position,
                                     selected: selectedImageID == img.id,
                                     onSelect: {
                                         selectedImageID = img.id
@@ -93,14 +109,75 @@ struct NotebookDetailView: View {
                     .cornerRadius(12)
                     .shadow(radius: 2)
                 } else {
-                    PageView(page: notebook.pages[selectedPageIndex], showWelcome: false, showCanvasElements: true)
-                        .rotation3DEffect(
-                            .degrees(rotation),
-                            axis: (x: 0, y: 1, z: 0),
-                            anchor: .leading,
-                            perspective: 0.5
+                    ZStack(alignment: .center) {
+                        // Page background and lines (copied from PageView)
+                        HStack(spacing: 0) {
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.1))
+                                .frame(width: 40)
+                            ZStack {
+                                Rectangle()
+                                    .fill(Color.white.opacity(0.95))
+                                    .frame(width: 320, height: 400)
+                                VStack(spacing: 0) {
+                                    ForEach(0..<20) { _ in
+                                        Rectangle()
+                                            .fill(Color.gray.opacity(0.1))
+                                            .frame(height: 1)
+                                            .padding(.vertical, 14)
+                                    }
+                                }
+                                .padding(.horizontal, 30)
+                                .padding(.vertical, 20)
+                            }
+                        }
+                        .frame(height: 400)
+                        .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                         )
-                        .opacity(1)
+                        .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 1)
+
+                        // Render overlays from the model
+                        if let textBoxes = notebook.pages[selectedPageIndex].textBoxes {
+                            ForEach(textBoxes) { box in
+                                Text(box.text)
+                                    .font(.body)
+                                    .frame(minWidth: 60, maxWidth: 180, minHeight: 32, alignment: .topLeading)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .padding(8)
+                                    .background(Color.clear)
+                                    .cornerRadius(8)
+                                    .position(
+                                        x: box.position.x.isFinite ? box.position.x : 100,
+                                        y: box.position.y.isFinite ? box.position.y : 100
+                                    )
+                            }
+                        }
+                        if let images = notebook.pages[selectedPageIndex].images {
+                            ForEach(images) { img in
+                                if let uiImage = UIImage(data: img.imageData) {
+                                    Image(uiImage: uiImage)
+                                        .resizable()
+                                        .frame(width: 100, height: 100)
+                                        .cornerRadius(8)
+                                        .position(
+                                            x: img.position.x.isFinite ? img.position.x : 100,
+                                            y: img.position.y.isFinite ? img.position.y : 100
+                                        )
+                                }
+                            }
+                        }
+                    }
+                    .frame(width: 360, height: 400)
+                    .rotation3DEffect(
+                        .degrees(rotation),
+                        axis: (x: 0, y: 1, z: 0),
+                        anchor: .leading,
+                        perspective: 0.5
+                    )
+                    .opacity(1)
                 }
             }
             .frame(height: 500)
@@ -145,20 +222,6 @@ struct NotebookDetailView: View {
             )
             // Minimal page indicator between notebook and Edit button
             Spacer().frame(height: 16)
-            // Edit menu below the page in edit mode
-            if isEditingPage {
-                HStack(spacing: 32) {
-                    Button(action: { addMyTextBox() }) {
-                        Image(systemName: "textformat")
-                            .font(.title2)
-                    }
-                    Button(action: { showSystemImagePicker = true }) {
-                        Image(systemName: "photo")
-                            .font(.title2)
-                    }
-                }
-                .padding(.vertical, 8)
-            }
             Text("Page \(selectedPageIndex + 1) of \(notebook.pages.count)")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(.primary)
@@ -529,7 +592,7 @@ struct PageContentView: View {
 
 struct MyCanvasTextBox: View {
     @Binding var text: String
-    @State private var position: CGPoint
+    @Binding var position: CGPoint
     var selected: Bool
     @Binding var isEditing: Bool
     var onSelect: () -> Void
@@ -537,10 +600,11 @@ struct MyCanvasTextBox: View {
     @GestureState private var dragOffset: CGSize = .zero
     @State private var isMoving: Bool = false
     @State private var dragStart: CGPoint? = nil
+    @State private var showDeleteAlert = false
 
-    init(text: Binding<String>, position: CGPoint, selected: Bool, isEditing: Binding<Bool>, onSelect: @escaping () -> Void, onDelete: @escaping () -> Void) {
+    init(text: Binding<String>, position: Binding<CGPoint>, selected: Bool, isEditing: Binding<Bool>, onSelect: @escaping () -> Void, onDelete: @escaping () -> Void) {
         self._text = text
-        self._position = State(initialValue: position)
+        self._position = position
         self.selected = selected
         self._isEditing = isEditing
         self.onSelect = onSelect
@@ -584,7 +648,6 @@ struct MyCanvasTextBox: View {
                     )
             }
             if selected {
-                // Delete button (top right)
                 Button(action: onDelete) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.red)
@@ -603,22 +666,30 @@ struct MyCanvasTextBox: View {
             x: position.x.isFinite ? position.x : 100,
             y: position.y.isFinite ? position.y : 100
         )
+        .onLongPressGesture {
+            showDeleteAlert = true
+        }
+        .alert("Delete this text box?", isPresented: $showDeleteAlert) {
+            Button("Delete", role: .destructive) { onDelete() }
+            Button("Cancel", role: .cancel) { }
+        }
     }
 }
 
 struct MyCanvasImage: View {
     let image: UIImage
-    @State private var position: CGPoint
+    @Binding var position: CGPoint
     var selected: Bool
     var onSelect: () -> Void
     var onDelete: () -> Void
     @GestureState private var dragOffset: CGSize = .zero
     @State private var isMoving: Bool = false
     @State private var dragStart: CGPoint? = nil
+    @State private var showDeleteAlert = false
 
-    init(image: UIImage, position: CGPoint, selected: Bool, onSelect: @escaping () -> Void, onDelete: @escaping () -> Void) {
+    init(image: UIImage, position: Binding<CGPoint>, selected: Bool, onSelect: @escaping () -> Void, onDelete: @escaping () -> Void) {
         self.image = image
-        self._position = State(initialValue: position)
+        self._position = position
         self.selected = selected
         self.onSelect = onSelect
         self.onDelete = onDelete
@@ -647,7 +718,6 @@ struct MyCanvasImage: View {
                         }
                 )
             if selected {
-                // Delete button (top right)
                 Button(action: onDelete) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.red)
@@ -662,6 +732,13 @@ struct MyCanvasImage: View {
             y: position.y.isFinite ? position.y : 100
         )
         .onTapGesture { onSelect() }
+        .onLongPressGesture {
+            showDeleteAlert = true
+        }
+        .alert("Delete this image?", isPresented: $showDeleteAlert) {
+            Button("Delete", role: .destructive) { onDelete() }
+            Button("Cancel", role: .cancel) { }
+        }
     }
 }
 

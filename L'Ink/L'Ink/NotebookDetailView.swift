@@ -630,6 +630,7 @@ struct MyCanvasTextBox: View {
                     .scrollContentBackground(.hidden)
                     .cornerRadius(8)
                     .onTapGesture { onSelect() }
+                    .foregroundColor(.black)
             } else {
                 Text(text.isEmpty ? " " : text)
                     .font(.body)
@@ -647,12 +648,18 @@ struct MyCanvasTextBox: View {
                             .updating($dragOffset) { value, state, _ in
                                 state = value.translation
                             }
-                            .onChanged { _ in onSelect() }
+                            .onChanged { value in
+                                if dragStart == nil { dragStart = position }
+                                position = CGPoint(x: dragStart!.x + value.translation.width, y: dragStart!.y + value.translation.height)
+                                onSelect()
+                            }
                             .onEnded { value in
                                 position.x += value.translation.width
                                 position.y += value.translation.height
+                                dragStart = nil
                             }
                     )
+                    .foregroundColor(.black)
             }
             if selected {
                 Button(action: onDelete) {

@@ -121,9 +121,14 @@ class NotebookViewModel: ObservableObject {
     }
     
     func updateNotebook(_ notebook: Notebook) {
-        db.collection("notebooks").document(notebook.id).setData(notebook.dictionary) { error in
+        print("Updating notebook with ID: \(notebook.id)")
+        print("Notebook data: \(notebook.dictionary)")
+        db.collection("notebooks").document(notebook.id).updateData(notebook.dictionary) { error in
             if let error = error {
                 print("Error updating notebook: \(error.localizedDescription)")
+                print("Error details: \(error)")
+            } else {
+                print("Successfully updated notebook")
             }
         }
     }

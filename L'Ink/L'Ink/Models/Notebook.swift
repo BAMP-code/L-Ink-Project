@@ -75,7 +75,7 @@ struct Notebook: Identifiable, Codable {
             "lastViewedPageIndex": lastViewedPageIndex,
             "coverImage": coverImage,
             "pages": pages.map { page in
-                [
+                var pageDict: [String: Any] = [
                     "id": page.id,
                     "content": page.content,
                     "type": page.type.rawValue,
@@ -83,6 +83,28 @@ struct Notebook: Identifiable, Codable {
                     "updatedAt": Timestamp(date: page.updatedAt),
                     "order": page.order
                 ]
+                
+                if let textBoxes = page.textBoxes {
+                    pageDict["textBoxes"] = textBoxes.map { box in
+                        [
+                            "id": box.id.uuidString,
+                            "text": box.text,
+                            "position": ["x": box.position.x, "y": box.position.y]
+                        ]
+                    }
+                }
+                
+                if let images = page.images {
+                    pageDict["images"] = images.map { img in
+                        [
+                            "id": img.id.uuidString,
+                            "imageData": img.imageData,
+                            "position": ["x": img.position.x, "y": img.position.y]
+                        ]
+                    }
+                }
+                
+                return pageDict
             }
         ]
     }
@@ -119,7 +141,37 @@ struct Notebook: Identifiable, Codable {
                 type: type,
                 createdAt: pageCreatedAt,
                 updatedAt: pageUpdatedAt,
-                order: order
+                order: order,
+                textBoxes: (pageDict["textBoxes"] as? [[String: Any]])?.compactMap { boxDict -> CanvasTextBoxModel? in
+                    guard let idString = boxDict["id"] as? String,
+                          let id = UUID(uuidString: idString),
+                          let text = boxDict["text"] as? String,
+                          let positionDict = boxDict["position"] as? [String: CGFloat],
+                          let x = positionDict["x"],
+                          let y = positionDict["y"] else {
+                        return nil
+                    }
+                    return CanvasTextBoxModel(
+                        id: id,
+                        text: text,
+                        position: CGPointCodable(CGPoint(x: x, y: y))
+                    )
+                },
+                images: (pageDict["images"] as? [[String: Any]])?.compactMap { imgDict -> CanvasImageModel? in
+                    guard let idString = imgDict["id"] as? String,
+                          let id = UUID(uuidString: idString),
+                          let imageData = imgDict["imageData"] as? Data,
+                          let positionDict = imgDict["position"] as? [String: CGFloat],
+                          let x = positionDict["x"],
+                          let y = positionDict["y"] else {
+                        return nil
+                    }
+                    return CanvasImageModel(
+                        id: id,
+                        imageData: imageData,
+                        position: CGPointCodable(CGPoint(x: x, y: y))
+                    )
+                }
             )
         } ?? []
         

@@ -46,6 +46,7 @@ struct NotebookScrollView: View {
     @Binding var scrollOffset: CGFloat
     let onDelete: (Notebook) -> Void
     @Binding var showingNewNotebook: Bool
+    @ObservedObject var viewModel: NotebookViewModel
     
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -58,7 +59,7 @@ struct NotebookScrollView: View {
             HStack(spacing: 20) {
                 ForEach(Array(notebooks.enumerated()), id: \.element.id) { index, notebook in
                     if isEditMode {
-                        NotebookCard(notebook: notebook, index: index, totalCount: notebooks.count, scrollOffset: scrollOffset)
+                        NotebookCard(viewModel: viewModel, notebook: notebook, index: index, totalCount: notebooks.count, scrollOffset: scrollOffset)
                             .overlay(
                                 Button(action: {
                                     onDelete(notebook)
@@ -73,7 +74,7 @@ struct NotebookScrollView: View {
                                 alignment: .topTrailing
                             )
                     } else {
-                        NotebookCard(notebook: notebook, index: index, totalCount: notebooks.count, scrollOffset: scrollOffset)
+                        NotebookCard(viewModel: viewModel, notebook: notebook, index: index, totalCount: notebooks.count, scrollOffset: scrollOffset)
                     }
                 }
                 
@@ -205,7 +206,8 @@ struct NotebookSpaceView: View {
                                 notebookToDelete = notebook
                                 showingDeleteAlert = true
                             },
-                            showingNewNotebook: $showingNewNotebook
+                            showingNewNotebook: $showingNewNotebook,
+                            viewModel: viewModel
                         )
                     }
                 }
@@ -244,6 +246,7 @@ struct NotebookSpaceView: View {
 }
 
 struct NotebookCard: View {
+    @ObservedObject var viewModel: NotebookViewModel
     let notebook: Notebook
     let index: Int
     let totalCount: Int
@@ -267,7 +270,7 @@ struct NotebookCard: View {
     var body: some View {
         ZStack {
             // Invisible NavigationLink triggered by state
-            NavigationLink(destination: NotebookDetailView(notebook: notebook), isActive: $navigate) {
+            NavigationLink(destination: NotebookDetailView(viewModel: viewModel, notebookId: notebook.id), isActive: $navigate) {
                 EmptyView()
             }.hidden()
             // Main notebook container

@@ -1,8 +1,9 @@
 import SwiftUI
 
 struct NotebookDetailView: View {
-    @State var notebook: Notebook
-    @StateObject private var viewModel: NotebookViewModel
+    @ObservedObject var viewModel: NotebookViewModel
+    let notebookId: String
+    
     @State private var selectedPageIndex: Int
     @State private var showingNewPageSheet = false
     @State private var newPageType: PageType = .text
@@ -18,291 +19,298 @@ struct NotebookDetailView: View {
     @State private var selectedImageID: UUID? = nil
     @State private var editingTextBoxID: UUID? = nil
     
-    init(notebook: Notebook) {
-        var notebookCopy = notebook
-        // Remove welcome text from first page if present
-        if !notebookCopy.pages.isEmpty && notebookCopy.pages[0].content == "Welcome to your first page! You can write text here or create ink drawings." {
-            notebookCopy.pages[0].content = ""
-        }
-        self.notebook = notebookCopy
-        _viewModel = StateObject(wrappedValue: NotebookViewModel())
-        _selectedPageIndex = State(initialValue: 0)
+    init(viewModel: NotebookViewModel, notebookId: String) {
+        self.viewModel = viewModel
+        self.notebookId = notebookId
+        // Find the notebook and initialize selectedPageIndex
+        let initialNotebook = viewModel.notebooks.first(where: { $0.id == notebookId })
+        _selectedPageIndex = State(initialValue: initialNotebook?.lastViewedPageIndex ?? 0)
+    }
+    
+    // Computed property to access the current notebook from the view model
+    private var notebook: Notebook? {
+        viewModel.notebooks.first(where: { $0.id == notebookId })
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Reserve space for edit menu in both modes
-            if isEditingPage {
-                HStack(spacing: 32) {
-                    Button(action: { addMyTextBox() }) {
-                        Image(systemName: "textformat")
-                            .font(.title2)
-                    }
-                    Button(action: { showSystemImagePicker = true }) {
-                        Image(systemName: "photo")
-                            .font(.title2)
-                    }
-                }
-                .padding(.vertical, 8)
-            } else {
-                Spacer().frame(height: 60)
-            }
-            // 3D Notebook View or Canvas
-            ZStack {
+        // Ensure notebook exists before rendering the body
+        if let notebook = notebook {
+            VStack(spacing: 0) {
+                // Reserve space for edit menu in both modes
                 if isEditingPage {
-                    ZStack(alignment: .center) {
-                        PageView(page: notebook.pages[selectedPageIndex], showWelcome: false, showCanvasElements: false)
-                            .rotation3DEffect(
-                                .degrees(0), // No rotation in edit mode
-                                axis: (x: 0, y: 1, z: 0),
-                                anchor: .leading,
-                                perspective: 0.5
-                            )
-                            .opacity(1)
-                            .zIndex(0)
-                        if !myTextBoxes.isEmpty || !myImages.isEmpty {
-                            ForEach($myTextBoxes, id: \.id) { $box in
-                                MyCanvasTextBox(
-                                    text: $box.text,
-                                    position: $box.position,
-                                    selected: selectedTextBoxID == box.id,
-                                    isEditing: Binding(
-                                        get: { editingTextBoxID == box.id },
-                                        set: { newValue in editingTextBoxID = newValue ? box.id : nil }
-                                    ),
-                                    onSelect: {
-                                        selectedTextBoxID = box.id
-                                        selectedImageID = nil
-                                        editingTextBoxID = box.id
-                                    },
-                                    onDelete: { myTextBoxes.removeAll { $0.id == box.id } }
-                                )
-                                .zIndex(3)
-                            }
-                            ForEach($myImages, id: \.id) { $img in
-                                MyCanvasImage(
-                                    image: img.image,
-                                    position: $img.position,
-                                    selected: selectedImageID == img.id,
-                                    onSelect: {
-                                        selectedImageID = img.id
-                                        selectedTextBoxID = nil
-                                        editingTextBoxID = nil
-                                    },
-                                    onDelete: { myImages.removeAll { $0.id == img.id } }
-                                )
-                                .zIndex(3)
-                            }
+                    HStack(spacing: 32) {
+                        Button(action: { addMyTextBox() }) {
+                            Image(systemName: "textformat")
+                                .font(.title2)
                         }
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                if editingTextBoxID != nil {
-                                    editingTextBoxID = nil
-                                } else {
-                                    selectedTextBoxID = nil
-                                    selectedImageID = nil
+                        Button(action: { showSystemImagePicker = true }) {
+                            Image(systemName: "photo")
+                                .font(.title2)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                } else {
+                    Spacer().frame(height: 60)
+                }
+                // 3D Notebook View or Canvas
+                ZStack {
+                    if isEditingPage {
+                        ZStack(alignment: .center) {
+                            PageView(page: notebook.pages[selectedPageIndex], showWelcome: false, showCanvasElements: false)
+                                .rotation3DEffect(
+                                    .degrees(0), // No rotation in edit mode
+                                    axis: (x: 0, y: 1, z: 0),
+                                    anchor: .leading,
+                                    perspective: 0.5
+                                )
+                                .opacity(1)
+                                .zIndex(0)
+                            if !myTextBoxes.isEmpty || !myImages.isEmpty {
+                                ForEach($myTextBoxes, id: \.id) { $box in
+                                    MyCanvasTextBox(
+                                        text: $box.text,
+                                        position: $box.position,
+                                        selected: selectedTextBoxID == box.id,
+                                        isEditing: Binding(
+                                            get: { editingTextBoxID == box.id },
+                                            set: { newValue in editingTextBoxID = newValue ? box.id : nil }
+                                        ),
+                                        onSelect: {
+                                            selectedTextBoxID = box.id
+                                            selectedImageID = nil
+                                            editingTextBoxID = box.id
+                                        },
+                                        onDelete: { myTextBoxes.removeAll { $0.id == box.id } }
+                                    )
+                                    .zIndex(3)
+                                }
+                                ForEach($myImages, id: \.id) { $img in
+                                    MyCanvasImage(
+                                        image: img.image,
+                                        position: $img.position,
+                                        selected: selectedImageID == img.id,
+                                        onSelect: {
+                                            selectedImageID = img.id
+                                            selectedTextBoxID = nil
+                                            editingTextBoxID = nil
+                                        },
+                                        onDelete: { myImages.removeAll { $0.id == img.id } }
+                                    )
+                                    .zIndex(3)
                                 }
                             }
-                    }
-                    .frame(width: 360, height: 400)
-                    .cornerRadius(12)
-                    .shadow(radius: 2)
-                } else {
-                    ZStack(alignment: .center) {
-                        // Page background and lines (copied from PageView)
-                        HStack(spacing: 0) {
-                            Rectangle()
-                                .fill(Color.gray.opacity(0.1))
-                                .frame(width: 40)
-                            ZStack {
-                                Rectangle()
-                                    .fill(Color.white.opacity(0.95))
-                                    .frame(width: 320, height: 400)
-                                VStack(spacing: 0) {
-                                    ForEach(0..<20) { _ in
-                                        Rectangle()
-                                            .fill(Color.gray.opacity(0.1))
-                                            .frame(height: 1)
-                                            .padding(.vertical, 14)
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    if editingTextBoxID != nil {
+                                        editingTextBoxID = nil
+                                    } else {
+                                        selectedTextBoxID = nil
+                                        selectedImageID = nil
                                     }
+                                }
+                        }
+                        .frame(width: 360, height: 400)
+                        .cornerRadius(12)
+                        .shadow(radius: 2)
+                    } else {
+                        ZStack(alignment: .center) {
+                            // Page background and lines (copied from PageView)
+                            HStack(spacing: 0) {
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.1))
+                                    .frame(width: 40)
+                                ZStack {
+                                    Rectangle()
+                                        .fill(Color.white.opacity(0.95))
+                                        .frame(width: 320, height: 400)
+                                    VStack(spacing: 0) {
+                                        ForEach(0..<20) { _ in
+                                            Rectangle()
+                                                .fill(Color.gray.opacity(0.1))
+                                                .frame(height: 1)
+                                                .padding(.vertical, 14)
+                                        }
+                                    }
+                                    .padding(.horizontal, 30)
+                                    .padding(.vertical, 20)
                                 }
                                 .padding(.horizontal, 30)
                                 .padding(.vertical, 20)
                             }
-                        }
-                        .frame(height: 400)
-                        .cornerRadius(8)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                        )
-                        .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 1)
+                            .frame(height: 400)
+                            .cornerRadius(8)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                            )
+                            .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 1)
 
-                        // Render overlays from the model
-                        if let textBoxes = notebook.pages[selectedPageIndex].textBoxes {
-                            ForEach(textBoxes) { box in
-                                Text(box.text)
-                                    .font(.body)
-                                    .frame(minWidth: 60, maxWidth: 180, minHeight: 32, alignment: .topLeading)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .padding(8)
-                                    .background(Color.clear)
-                                    .cornerRadius(8)
-                                    .position(
-                                        x: box.position.x.isFinite ? box.position.x : 100,
-                                        y: box.position.y.isFinite ? box.position.y : 100
-                                    )
-                            }
-                        }
-                        if let images = notebook.pages[selectedPageIndex].images {
-                            ForEach(images) { img in
-                                if let uiImage = UIImage(data: img.imageData) {
-                                    Image(uiImage: uiImage)
-                                        .resizable()
-                                        .frame(width: 100, height: 100)
+                            // Render overlays from the model
+                            if let textBoxes = notebook.pages[selectedPageIndex].textBoxes {
+                                ForEach(textBoxes) { box in
+                                    Text(box.text)
+                                        .font(.body)
+                                        .frame(minWidth: 60, maxWidth: 180, minHeight: 32, alignment: .topLeading)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .padding(8)
+                                        .background(Color.clear)
                                         .cornerRadius(8)
                                         .position(
-                                            x: img.position.x.isFinite ? img.position.x : 100,
-                                            y: img.position.y.isFinite ? img.position.y : 100
+                                            x: box.position.x.isFinite ? box.position.x : 100,
+                                            y: box.position.y.isFinite ? box.position.y : 100
                                         )
                                 }
                             }
-                        }
-                    }
-                    .frame(width: 360, height: 400)
-                    .rotation3DEffect(
-                        .degrees(rotation),
-                        axis: (x: 0, y: 1, z: 0),
-                        anchor: .leading,
-                        perspective: 0.5
-                    )
-                    .opacity(1)
-                }
-            }
-            .frame(height: 500)
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
-                        if !isFlipping && !isEditingPage {
-                            rotation = Double(value.translation.width / 2)
-                        }
-                    }
-                    .onEnded { value in
-                        if !isEditingPage {
-                        if value.translation.width < -100 && selectedPageIndex < notebook.pages.count - 1 {
-                            withAnimation(.easeInOut(duration: 0.5)) {
-                                rotation = -180
-                                isFlipping = true
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                selectedPageIndex += 1
-                                saveLastViewedPage()
-                                rotation = 0
-                                isFlipping = false
-                            }
-                        } else if value.translation.width > 100 && selectedPageIndex > 0 {
-                            withAnimation(.easeInOut(duration: 0.5)) {
-                                rotation = 180
-                                isFlipping = true
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                selectedPageIndex -= 1
-                                saveLastViewedPage()
-                                rotation = 0
-                                isFlipping = false
-                            }
-                        } else {
-                            withAnimation {
-                                rotation = 0
+                            if let images = notebook.pages[selectedPageIndex].images {
+                                ForEach(images) { img in
+                                    if let uiImage = UIImage(data: img.imageData) {
+                                        Image(uiImage: uiImage)
+                                            .resizable()
+                                            .frame(width: 100, height: 100)
+                                            .cornerRadius(8)
+                                            .position(
+                                                x: img.position.x.isFinite ? img.position.x : 100,
+                                                y: img.position.y.isFinite ? img.position.y : 100
+                                            )
+                                    }
                                 }
                             }
                         }
+                        .frame(width: 360, height: 400)
+                        .rotation3DEffect(
+                            .degrees(rotation),
+                            axis: (x: 0, y: 1, z: 0),
+                            anchor: .leading,
+                            perspective: 0.5
+                        )
+                        .opacity(1)
                     }
-            )
-            // Minimal page indicator between notebook and Edit button
-            Spacer().frame(height: 16)
-            Text("Page \(selectedPageIndex + 1) of \(notebook.pages.count)")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.primary)
-                .padding(.bottom, 8)
-                .textSelection(.enabled)
-                .tint(.blue)
-            // Big Edit button
-            Button(action: {
-                if isEditingPage {
-                    saveCanvasToPage()
-                    selectedTextBoxID = nil
-                    selectedImageID = nil
-                    editingTextBoxID = nil
-                } else {
-                    loadCanvasFromPage()
                 }
-                isEditingPage.toggle()
-            }) {
-                Text(isEditingPage ? "Done" : "Edit")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-            .padding()
-                    .background(
-                        LinearGradient(gradient: Gradient(colors: [Color.blue, Color.purple]), startPoint: .leading, endPoint: .trailing)
-                    )
-                    .cornerRadius(18)
-                    .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 6)
-                    .padding(.horizontal, 32)
-            }
-            .padding(.bottom, 32)
-        }
-        .navigationTitle(notebook.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: { showingNewPageSheet = true }) {
-                    Image(systemName: "plus")
-                }
-            }
-        }
-        .toolbar(.hidden, for: .tabBar)
-        .sheet(isPresented: $showingNewPageSheet) {
-            NavigationView {
-                Form {
-                    Section(header: Text("Page Type")) {
-                        Picker("Type", selection: $newPageType) {
-                            Text("Text").tag(PageType.text)
+                .frame(height: 500)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            if !isFlipping && !isEditingPage {
+                                rotation = Double(value.translation.width / 2)
+                            }
                         }
-                        .pickerStyle(SegmentedPickerStyle())
-                    }
-                }
-                .navigationTitle("New Page")
-                .navigationBarItems(
-                    leading: Button("Cancel") {
-                        showingNewPageSheet = false
-                    },
-                    trailing: Button("Add") {
-                        viewModel.addPage(to: notebook, type: newPageType)
-                        selectedPageIndex = notebook.pages.count - 1
-                        showingNewPageSheet = false
-                    }
+                        .onEnded { value in
+                            if !isEditingPage {
+                            if value.translation.width < -100 && selectedPageIndex < notebook.pages.count - 1 {
+                                withAnimation(.easeInOut(duration: 0.5)) {
+                                    rotation = -180
+                                    isFlipping = true
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                    selectedPageIndex += 1
+                                    saveLastViewedPage()
+                                    rotation = 0
+                                    isFlipping = false
+                                }
+                            } else if value.translation.width > 100 && selectedPageIndex > 0 {
+                                withAnimation(.easeInOut(duration: 0.5)) {
+                                    rotation = 180
+                                    isFlipping = true
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                    selectedPageIndex -= 1
+                                    saveLastViewedPage()
+                                    rotation = 0
+                                    isFlipping = false
+                                }
+                            } else {
+                                withAnimation {
+                                    rotation = 0
+                                    }
+                                }
+                            }
+                        }
                 )
-            }
-        }
-        .sheet(isPresented: $showSystemImagePicker) {
-            MySystemImagePicker { image in
-                if let image = image {
-                    myImages.append((UUID(), image, CGPoint(x: 200, y: 200)))
+                // Minimal page indicator between notebook and Edit button
+                Spacer().frame(height: 16)
+                Text("Page \(selectedPageIndex + 1) of \(notebook.pages.count)")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.primary)
+                    .padding(.bottom, 8)
+                    .textSelection(.enabled)
+                    .tint(.blue)
+                // Big Edit button
+                Button(action: {
+                    if isEditingPage {
+                        saveCanvasToPage()
+                        selectedTextBoxID = nil
+                        selectedImageID = nil
+                        editingTextBoxID = nil
+                    } else {
+                        loadCanvasFromPage()
+                    }
+                    isEditingPage.toggle()
+                }) {
+                    Text(isEditingPage ? "Done" : "Edit")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                .padding()
+                        .background(
+                            LinearGradient(gradient: Gradient(colors: [Color.blue, Color.purple]), startPoint: .leading, endPoint: .trailing)
+                        )
+                        .cornerRadius(18)
+                        .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 6)
+                        .padding(.horizontal, 32)
                 }
-                showSystemImagePicker = false
+                .padding(.bottom, 32)
             }
-        }
-        .onChange(of: selectedPageIndex) { _, _ in
-            loadCanvasFromPage()
-            saveLastViewedPage()
+            .navigationTitle(notebook.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { showingNewPageSheet = true }) {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .toolbar(.hidden, for: .tabBar)
+            .sheet(isPresented: $showingNewPageSheet) {
+                NavigationView {
+                    Form {
+                        Section(header: Text("Page Type")) {
+                            Picker("Type", selection: $newPageType) {
+                                Text("Text").tag(PageType.text)
+                            }
+                            .pickerStyle(SegmentedPickerStyle())
+                        }
+                    }
+                    .navigationTitle("New Page")
+                    .navigationBarItems(
+                        leading: Button("Cancel") {
+                            showingNewPageSheet = false
+                        },
+                        trailing: Button("Add") {
+                            viewModel.addPage(to: notebook, type: newPageType)
+                            selectedPageIndex = notebook.pages.count - 1
+                            showingNewPageSheet = false
+                        }
+                    )
+                }
+            }
+            .sheet(isPresented: $showSystemImagePicker) {
+                MySystemImagePicker { image in
+                    if let image = image {
+                        myImages.append((UUID(), image, CGPoint(x: 200, y: 200)))
+                    }
+                    showSystemImagePicker = false
+                }
+            }
+            .onChange(of: selectedPageIndex) { _, _ in
+                loadCanvasFromPage()
+                saveLastViewedPage()
+            }
         }
     }
     
     private func saveLastViewedPage() {
-        var updatedNotebook = notebook
+        var updatedNotebook = notebook!
         updatedNotebook.lastViewedPageIndex = selectedPageIndex
         viewModel.updateNotebook(updatedNotebook)
     }
@@ -325,23 +333,22 @@ struct NotebookDetailView: View {
             }
             return nil
         }
-        var updatedPage = notebook.pages[selectedPageIndex]
+        var updatedPage = notebook!.pages[selectedPageIndex]
         updatedPage.textBoxes = textBoxModels
         updatedPage.images = imageModels
         updatedPage.updatedAt = Date()
-        var updatedNotebook = notebook
+        var updatedNotebook = notebook!
         updatedNotebook.pages[selectedPageIndex] = updatedPage
         updatedNotebook.updatedAt = Date()
         viewModel.updateNotebook(updatedNotebook)
-        notebook = updatedNotebook
     }
 
     private func loadCanvasFromPage() {
-        let page = notebook.pages[selectedPageIndex]
-        myTextBoxes = page.textBoxes?.map { box in
+        let page = notebook!
+        myTextBoxes = page.pages[selectedPageIndex].textBoxes?.map { box in
             (box.id, box.text, box.position.cgPoint)
         } ?? []
-        myImages = page.images?.compactMap { model in
+        myImages = page.pages[selectedPageIndex].images?.compactMap { model in
             if let image = UIImage(data: model.imageData) {
                 return (model.id, image, model.position.cgPoint)
             }

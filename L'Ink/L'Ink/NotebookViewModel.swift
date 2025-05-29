@@ -11,16 +11,30 @@ class NotebookViewModel: ObservableObject {
     private let notebooksCollection = "notebooks"
     private let entriesCollection = "entries"
     
-    // Test user ID for development
-    let testUserId = "bamp"
+    var currentUserid: String {
+        Auth.auth().currentUser?.uid ?? ""
+    }
     
     // MARK: - Notebook Operations
     
     func fetchNotebooks() {
+        guard !currentUserid.isEmpty else {
+            print("Current user ID is empty. Cannot fetch notebooks.")
+            // Optionally clear existing notebooks if needed
+            self.notebooks = []
+            return
+        }
+        
         db.collection("notebooks")
+            .whereField("ownerId", isEqualTo: currentUserid) // Filter by ownerId
             .addSnapshotListener { [weak self] snapshot, error in
                 guard let documents = snapshot?.documents else {
                     print("Error fetching notebooks: \(error?.localizedDescription ?? "Unknown error")")
+                    // If no documents and no error, it means no notebooks for this user
+                    if error == nil {
+                        self?.notebooks = [] // Clear notebooks if none found for user
+                        self?.createDefaultNotebook() // Create default if none exist
+                    }
                     return
                 }
                 
@@ -31,7 +45,7 @@ class NotebookViewModel: ObservableObject {
                 // Reset pinned status for all notebooks
                 self?.resetPinnedStatus()
                 
-                // If no notebooks exist for the test user, create a default one
+                // If no notebooks exist for the current user after fetching, create a default one
                 if self?.notebooks.isEmpty == true {
                     self?.createDefaultNotebook()
                 }
@@ -47,6 +61,10 @@ class NotebookViewModel: ObservableObject {
     }
     
     private func createDefaultNotebook() {
+        guard !currentUserid.isEmpty else {
+            print("Current user ID is empty. Cannot create default notebook.")
+            return
+        }
         let coverPage = Page(
             id: UUID().uuidString,
             content: "Welcome to your notebook!",
@@ -58,7 +76,7 @@ class NotebookViewModel: ObservableObject {
         let defaultNotebook = Notebook(
             title: "My First Notebook",
             description: "Welcome to L'Ink! This is your first notebook.",
-            ownerId: testUserId,
+            ownerId: currentUserid, // Use currentUserid
             isPublic: false,
             isPinned: false,
             pages: [coverPage],
@@ -73,6 +91,10 @@ class NotebookViewModel: ObservableObject {
     }
     
     func createNotebook(title: String, isPublic: Bool, description: String? = nil, cover: String = "Blue") {
+        guard !currentUserid.isEmpty else {
+            print("Current user ID is empty. Cannot create notebook.")
+            return
+        }
         let coverPage = Page(
             id: UUID().uuidString,
             content: "Welcome to your notebook!",
@@ -84,7 +106,7 @@ class NotebookViewModel: ObservableObject {
         let notebook = Notebook(
             title: title,
             description: description,
-            ownerId: testUserId,
+            ownerId: currentUserid, // Use currentUserid
             isPublic: isPublic,
             isPinned: false,
             pages: [coverPage],

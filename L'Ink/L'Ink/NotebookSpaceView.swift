@@ -159,7 +159,7 @@ struct NotebookSpaceView: View {
         let notebooks: [Notebook]
         switch selectedSection {
         case 0: // My Notebooks
-            notebooks = viewModel.notebooks.filter { $0.ownerId == viewModel.testUserId }
+            notebooks = viewModel.notebooks.filter { $0.ownerId == viewModel.currentUserid}
         case 1: // Shared Notebooks
             notebooks = viewModel.notebooks.filter { $0.isPublic }
         case 2: // Favorites

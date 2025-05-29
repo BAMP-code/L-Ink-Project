@@ -11,7 +11,7 @@ struct NotebookDetailView: View {
     @State private var isFlipping = false
     @State private var isEditingPage = false
     @State private var myTextBoxes: [(id: UUID, text: String, position: CGPoint)] = []
-    @State private var myImages: [(id: UUID, image: UIImage, position: CGPoint)] = []
+    @State private var myImages: [(id: UUID, image: UIImage, position: CGPoint, imageUrl: String?)] = []
     @State private var myShowImageInsert = false
     @State private var showSystemImagePicker = false
     @State private var imageToAdd: UIImage? = nil
@@ -30,6 +30,135 @@ struct NotebookDetailView: View {
     // Computed property to access the current notebook from the view model
     private var notebook: Notebook? {
         viewModel.notebooks.first(where: { $0.id == notebookId })
+    }
+    
+    // Computed property for the editing view
+    private var editingPageView: some View {
+        ZStack(alignment: .center) {
+            PageView(page: notebook!.pages[selectedPageIndex], showWelcome: false, showCanvasElements: false)
+                .rotation3DEffect(
+                    .degrees(0), // No rotation in edit mode
+                    axis: (x: 0, y: 1, z: 0),
+                    anchor: .leading,
+                    perspective: 0.5
+                )
+                .opacity(1)
+                .zIndex(0)
+            if !myTextBoxes.isEmpty || !myImages.isEmpty {
+                ForEach($myTextBoxes, id: \.id) { $box in
+                    MyCanvasTextBox(
+                        text: $box.text,
+                        position: $box.position,
+                        selected: selectedTextBoxID == box.id,
+                        isEditing: Binding(
+                            get: { editingTextBoxID == box.id },
+                            set: { newValue in editingTextBoxID = newValue ? box.id : nil }
+                        ),
+                        onSelect: {
+                            selectedTextBoxID = box.id
+                            selectedImageID = nil
+                            editingTextBoxID = box.id
+                        },
+                        onDelete: { myTextBoxes.removeAll { $0.id == box.id } }
+                    )
+                    .zIndex(3)
+                }
+                ForEach($myImages, id: \.id) { $img in
+                    MyCanvasImage(
+                        image: img.image, // MyCanvasImage still takes UIImage
+                        position: $img.position,
+                        selected: selectedImageID == img.id,
+                        onSelect: {
+                            selectedImageID = img.id
+                            selectedTextBoxID = nil
+                            editingTextBoxID = nil
+                        },
+                        onDelete: { myImages.removeAll { $0.id == img.id } } // Delete from state variable
+                    )
+                    .zIndex(3)
+                }
+            }
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if editingTextBoxID != nil {
+                        editingTextBoxID = nil
+                    } else {
+                        selectedTextBoxID = nil
+                        selectedImageID = nil
+                    }
+                }
+        }
+        .frame(width: 360, height: 400)
+        .cornerRadius(12)
+        .shadow(radius: 2)
+    }
+
+    // Computed property for the reading view
+    private var readingPageView: some View {
+        ZStack(alignment: .center) {
+            // Page background and lines (copied from PageView)
+            HStack(spacing: 0) {
+                Rectangle()
+                    .fill(Color.gray.opacity(0.1))
+                    .frame(width: 40)
+                ZStack {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.95))
+                        .frame(width: 320, height: 400)
+                    VStack(spacing: 0) {
+                        ForEach(0..<20) { _ in
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.1))
+                                .frame(height: 1)
+                                .padding(.vertical, 14)
+                        }
+                    }
+                    .padding(.horizontal, 30)
+                    .padding(.vertical, 20)
+                }
+                .padding(.horizontal, 30)
+                .padding(.vertical, 20)
+            }
+            .frame(height: 400)
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 1)
+
+            // Render overlays from the model (text boxes and images)
+            if let textBoxes = notebook!.pages[selectedPageIndex].textBoxes {
+                ForEach(textBoxes) { box in
+                    Text(box.text)
+                        .font(.body)
+                        .frame(minWidth: 60, maxWidth: 180, minHeight: 32, alignment: .topLeading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(8)
+                        .background(Color.clear)
+                        .cornerRadius(8)
+                        .position(
+                            x: box.position.x.isFinite ? box.position.x : 100,
+                            y: box.position.y.isFinite ? box.position.y : 100
+                        )
+                }
+            }
+            if let images = notebook!.pages[selectedPageIndex].images {
+                ForEach(images) { img in
+                    // Use CanvasImageView to load and display image from URL
+                    CanvasImageView(imageModel: img)
+                }
+            }
+        }
+        .frame(width: 360, height: 400)
+        .rotation3DEffect(
+            .degrees(rotation),
+            axis: (x: 0, y: 1, z: 0),
+            anchor: .leading,
+            perspective: 0.5
+        )
+        .opacity(1)
     }
     
     var body: some View {
@@ -55,136 +184,9 @@ struct NotebookDetailView: View {
                 // 3D Notebook View or Canvas
                 ZStack {
                     if isEditingPage {
-                        ZStack(alignment: .center) {
-                            PageView(page: notebook.pages[selectedPageIndex], showWelcome: false, showCanvasElements: false)
-                                .rotation3DEffect(
-                                    .degrees(0), // No rotation in edit mode
-                                    axis: (x: 0, y: 1, z: 0),
-                                    anchor: .leading,
-                                    perspective: 0.5
-                                )
-                                .opacity(1)
-                                .zIndex(0)
-                            if !myTextBoxes.isEmpty || !myImages.isEmpty {
-                                ForEach($myTextBoxes, id: \.id) { $box in
-                                    MyCanvasTextBox(
-                                        text: $box.text,
-                                        position: $box.position,
-                                        selected: selectedTextBoxID == box.id,
-                                        isEditing: Binding(
-                                            get: { editingTextBoxID == box.id },
-                                            set: { newValue in editingTextBoxID = newValue ? box.id : nil }
-                                        ),
-                                        onSelect: {
-                                            selectedTextBoxID = box.id
-                                            selectedImageID = nil
-                                            editingTextBoxID = box.id
-                                        },
-                                        onDelete: { myTextBoxes.removeAll { $0.id == box.id } }
-                                    )
-                                    .zIndex(3)
-                                }
-                                ForEach($myImages, id: \.id) { $img in
-                                    MyCanvasImage(
-                                        image: img.image,
-                                        position: $img.position,
-                                        selected: selectedImageID == img.id,
-                                        onSelect: {
-                                            selectedImageID = img.id
-                                            selectedTextBoxID = nil
-                                            editingTextBoxID = nil
-                                        },
-                                        onDelete: { myImages.removeAll { $0.id == img.id } }
-                                    )
-                                    .zIndex(3)
-                                }
-                            }
-                            Color.clear
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    if editingTextBoxID != nil {
-                                        editingTextBoxID = nil
-                                    } else {
-                                        selectedTextBoxID = nil
-                                        selectedImageID = nil
-                                    }
-                                }
-                        }
-                        .frame(width: 360, height: 400)
-                        .cornerRadius(12)
-                        .shadow(radius: 2)
+                        editingPageView
                     } else {
-                        ZStack(alignment: .center) {
-                            // Page background and lines (copied from PageView)
-                            HStack(spacing: 0) {
-                                Rectangle()
-                                    .fill(Color.gray.opacity(0.1))
-                                    .frame(width: 40)
-                                ZStack {
-                                    Rectangle()
-                                        .fill(Color.white.opacity(0.95))
-                                        .frame(width: 320, height: 400)
-                                    VStack(spacing: 0) {
-                                        ForEach(0..<20) { _ in
-                                            Rectangle()
-                                                .fill(Color.gray.opacity(0.1))
-                                                .frame(height: 1)
-                                                .padding(.vertical, 14)
-                                        }
-                                    }
-                                    .padding(.horizontal, 30)
-                                    .padding(.vertical, 20)
-                                }
-                                .padding(.horizontal, 30)
-                                .padding(.vertical, 20)
-                            }
-                            .frame(height: 400)
-                            .cornerRadius(8)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                            )
-                            .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 1)
-
-                            // Render overlays from the model
-                            if let textBoxes = notebook.pages[selectedPageIndex].textBoxes {
-                                ForEach(textBoxes) { box in
-                                    Text(box.text)
-                                        .font(.body)
-                                        .frame(minWidth: 60, maxWidth: 180, minHeight: 32, alignment: .topLeading)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                        .padding(8)
-                                        .background(Color.clear)
-                                        .cornerRadius(8)
-                                        .position(
-                                            x: box.position.x.isFinite ? box.position.x : 100,
-                                            y: box.position.y.isFinite ? box.position.y : 100
-                                        )
-                                }
-                            }
-                            if let images = notebook.pages[selectedPageIndex].images {
-                                ForEach(images) { img in
-                                    if let uiImage = UIImage(data: img.imageData) {
-                                        Image(uiImage: uiImage)
-                                            .resizable()
-                                            .frame(width: 100, height: 100)
-                                            .cornerRadius(8)
-                                            .position(
-                                                x: img.position.x.isFinite ? img.position.x : 100,
-                                                y: img.position.y.isFinite ? img.position.y : 100
-                                            )
-                                    }
-                                }
-                            }
-                        }
-                        .frame(width: 360, height: 400)
-                        .rotation3DEffect(
-                            .degrees(rotation),
-                            axis: (x: 0, y: 1, z: 0),
-                            anchor: .leading,
-                            perspective: 0.5
-                        )
-                        .opacity(1)
+                        readingPageView
                     }
                 }
                 .frame(height: 500)
@@ -204,7 +206,9 @@ struct NotebookDetailView: View {
                                 }
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                                     selectedPageIndex += 1
-                                    saveLastViewedPage()
+                                    Task {
+                                        await saveLastViewedPage()
+                                    }
                                     rotation = 0
                                     isFlipping = false
                                 }
@@ -215,7 +219,9 @@ struct NotebookDetailView: View {
                                 }
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                                     selectedPageIndex -= 1
-                                    saveLastViewedPage()
+                                    Task {
+                                        await saveLastViewedPage()
+                                    }
                                     rotation = 0
                                     isFlipping = false
                                 }
@@ -238,7 +244,9 @@ struct NotebookDetailView: View {
                 // Big Edit button
                 Button(action: {
                     if isEditingPage {
-                        saveCanvasToPage()
+                        Task {
+                            await saveCanvasToPage()
+                        }
                         selectedTextBoxID = nil
                         selectedImageID = nil
                         editingTextBoxID = nil
@@ -297,25 +305,26 @@ struct NotebookDetailView: View {
             .sheet(isPresented: $showSystemImagePicker) {
                 MySystemImagePicker { image in
                     if let image = image {
-                        myImages.append((UUID(), image, CGPoint(x: 200, y: 200)))
+                        myImages.append((UUID(), image, CGPoint(x: 200, y: 200), nil))
                     }
                     showSystemImagePicker = false
                 }
             }
             .onChange(of: selectedPageIndex) { _, _ in
-                loadCanvasFromPage()
-                saveLastViewedPage()
+                Task {
+                    await loadCanvasFromPage()
+                }
             }
         }
     }
     
-    private func saveLastViewedPage() {
+    private func saveLastViewedPage() async {
         var updatedNotebook = notebook!
         updatedNotebook.lastViewedPageIndex = selectedPageIndex
         viewModel.updateNotebook(updatedNotebook)
     }
 
-    private func saveCanvasToPage() {
+    private func saveCanvasToPage() async {
         let textBoxModels: [CanvasTextBoxModel] = myTextBoxes.map { box in
             CanvasTextBoxModel(
                 id: box.id,
@@ -323,16 +332,37 @@ struct NotebookDetailView: View {
                 position: CGPointCodable(box.position)
             )
         }
-        let imageModels: [CanvasImageModel] = myImages.compactMap { img in
-            if let imageData = img.image.pngData() {
-                return CanvasImageModel(
-                    id: img.id,
-                    imageData: imageData,
-                    position: CGPointCodable(img.position)
-                )
+
+        var uploadedImageModels: [CanvasImageModel] = []
+        for index in myImages.indices {
+            var img = myImages[index]
+            // If image hasn't been uploaded yet
+            if img.imageUrl == nil, let imageData = img.image.pngData() {
+                let storagePath = "notebook_images/\(notebook!.id)/\(notebook!.pages[selectedPageIndex].id)/\(img.id).jpg"
+                do {
+                    let downloadURL = try await StorageService.shared.uploadImage(img.image, path: storagePath)
+                    img.imageUrl = downloadURL
+                    myImages[index] = img // Update the state variable
+                } catch {
+                    print("Error uploading image: \(error)")
+                    // Handle error, maybe skip this image or show an alert
+                    continue // Skip to the next image if upload fails
+                }
             }
-            return nil
+            
+            // Create CanvasImageModel with the URL (either new or existing)
+            if let imageUrl = img.imageUrl {
+                 uploadedImageModels.append(CanvasImageModel(
+                     id: img.id,
+                     imageData: nil, // Data is not saved in Firestore
+                     imageUrl: imageUrl,
+                     position: CGPointCodable(img.position)
+                 ))
+            }
         }
+
+        let imageModels = uploadedImageModels
+
         var updatedPage = notebook!.pages[selectedPageIndex]
         updatedPage.textBoxes = textBoxModels
         updatedPage.images = imageModels
@@ -340,24 +370,56 @@ struct NotebookDetailView: View {
         var updatedNotebook = notebook!
         updatedNotebook.pages[selectedPageIndex] = updatedPage
         updatedNotebook.updatedAt = Date()
-        viewModel.updateNotebook(updatedNotebook)
+        Task {
+            viewModel.updateNotebook(updatedNotebook)
+        }
     }
 
     private func loadCanvasFromPage() {
-        let page = notebook!
-        myTextBoxes = page.pages[selectedPageIndex].textBoxes?.map { box in
+        guard let notebook = notebook else { return }
+        let page = notebook.pages[selectedPageIndex]
+
+        myTextBoxes = page.textBoxes?.map { box in
             (box.id, box.text, box.position.cgPoint)
         } ?? []
-        myImages = page.pages[selectedPageIndex].images?.compactMap { model in
-            if let image = UIImage(data: model.imageData) {
-                return (model.id, image, model.position.cgPoint)
+
+        // Load images from URLs
+        myImages = [] // Clear existing images
+        Task {
+            await loadImagesFromURLs(page.images)
+        }
+    }
+
+    private func loadImagesFromURLs(_ imageModels: [CanvasImageModel]?) async {
+        guard let imageModels = imageModels else { return }
+
+        var loadedImages: [(id: UUID, image: UIImage, position: CGPoint, imageUrl: String?)] = []
+        for model in imageModels {
+            if let imageUrlString = model.imageUrl, let imageUrl = URL(string: imageUrlString) {
+                do {
+                    let (data, _) = try await URLSession.shared.data(from: imageUrl)
+                    if let image = UIImage(data: data) {
+                        loadedImages.append((id: model.id, image: image, position: model.position.cgPoint, imageUrl: imageUrlString))
+                    }
+                } catch {
+                    print("Error loading image from URL \(imageUrlString): \(error)")
+                    // Handle error loading image
+                }
             }
-            return nil
-        } ?? []
+        }
+        // Update the state variable on the main actor
+        await MainActor.run {
+            myImages = loadedImages
+        }
     }
 
     private func addMyTextBox() {
         myTextBoxes.append((UUID(), "New Text", CGPoint(x: 150, y: 150)))
+    }
+
+    // Function to add image to myImages after selection
+    private func addMyImage(_ image: UIImage) {
+        myImages.append((id: UUID(), image: image, position: CGPoint(x: 200, y: 200), imageUrl: nil))
     }
 }
 
@@ -372,7 +434,9 @@ struct MySystemImagePicker: UIViewControllerRepresentable {
         init(_ parent: MySystemImagePicker) { self.parent = parent }
         func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
             let image = info[.originalImage] as? UIImage
-            parent.completion(image)
+            picker.dismiss(animated: true) {
+                self.parent.completion(image)
+            }
         }
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
             parent.completion(nil)
@@ -530,16 +594,8 @@ struct PageView: View {
                     // Display saved images
                     if showCanvasElements, let images = page.images {
                         ForEach(images) { img in
-                            if let uiImage = UIImage(data: img.imageData) {
-                                Image(uiImage: uiImage)
-                                    .resizable()
-                                    .frame(width: 100, height: 100)
-                                    .cornerRadius(8)
-                                    .position(
-                                        x: img.position.x.isFinite ? img.position.x : 100,
-                                        y: img.position.y.isFinite ? img.position.y : 100
-                                    )
-                            }
+                            // Use a helper view to load and display image from URL
+                            CanvasImageView(imageModel: img)
                         }
                     }
                 }
@@ -752,6 +808,43 @@ struct MyCanvasImage: View {
         .alert("Delete this image?", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) { onDelete() }
             Button("Cancel", role: .cancel) { }
+        }
+    }
+}
+
+// Add a helper view to load and display images from URL
+struct CanvasImageView: View {
+    let imageModel: CanvasImageModel
+    @State private var loadedImage: UIImage? = nil
+
+    var body: some View {
+        Group {
+            if let uiImage = loadedImage {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .frame(width: 100, height: 100)
+                    .cornerRadius(8)
+            } else {
+                // Placeholder while loading or if loading fails
+                ProgressView()
+            }
+        }
+        .position(
+            x: imageModel.position.x.isFinite ? imageModel.position.x : 100,
+            y: imageModel.position.y.isFinite ? imageModel.position.y : 100
+        )
+        .task { // Use .task to load image when view appears
+            if loadedImage == nil, let imageUrlString = imageModel.imageUrl, let imageUrl = URL(string: imageUrlString) {
+                do {
+                    let (data, _) = try await URLSession.shared.data(from: imageUrl)
+                    if let image = UIImage(data: data) {
+                        loadedImage = image
+                    }
+                } catch {
+                    print("Error loading image from URL \(imageUrlString): \(error)")
+                    // Handle error loading image
+                }
+            }
         }
     }
 }

@@ -17,7 +17,7 @@ struct Page: Identifiable, Codable {
     // Persistent canvas state
     var drawingData: Data?
     var textBoxes: [CanvasTextBoxModel]?
-    var images: [CanvasImageModel]?
+    var images: [CanvasImageModel]? // Store URL, not Data in Firestore
 }
 
 struct Notebook: Identifiable, Codable {
@@ -84,6 +84,10 @@ struct Notebook: Identifiable, Codable {
                     "order": page.order
                 ]
                 
+                if let drawingData = page.drawingData {
+                    pageDict["drawingData"] = drawingData
+                }
+                
                 if let textBoxes = page.textBoxes {
                     pageDict["textBoxes"] = textBoxes.map { box in
                         [
@@ -95,12 +99,17 @@ struct Notebook: Identifiable, Codable {
                 }
                 
                 if let images = page.images {
-                    pageDict["images"] = images.map { img in
-                        [
-                            "id": img.id.uuidString,
-                            "imageData": img.imageData,
-                            "position": ["x": img.position.x, "y": img.position.y]
-                        ]
+                    pageDict["images"] = images.compactMap { img in // Use compactMap to exclude images without URLs
+                        // ONLY include images that have a download URL
+                        if let imageUrl = img.imageUrl {
+                            return [
+                                "id": img.id.uuidString,
+                                "imageUrl": imageUrl,
+                                "position": ["x": img.position.x, "y": img.position.y]
+                            ]
+                        } else {
+                           return nil // Don't save images without a URL yet
+                        }
                     }
                 }
                 
@@ -142,6 +151,7 @@ struct Notebook: Identifiable, Codable {
                 createdAt: pageCreatedAt,
                 updatedAt: pageUpdatedAt,
                 order: order,
+                drawingData: pageDict["drawingData"] as? Data,
                 textBoxes: (pageDict["textBoxes"] as? [[String: Any]])?.compactMap { boxDict -> CanvasTextBoxModel? in
                     guard let idString = boxDict["id"] as? String,
                           let id = UUID(uuidString: idString),
@@ -160,15 +170,16 @@ struct Notebook: Identifiable, Codable {
                 images: (pageDict["images"] as? [[String: Any]])?.compactMap { imgDict -> CanvasImageModel? in
                     guard let idString = imgDict["id"] as? String,
                           let id = UUID(uuidString: idString),
-                          let imageData = imgDict["imageData"] as? Data,
-                          let positionDict = imgDict["position"] as? [String: CGFloat],
+                          let imageUrl = imgDict["imageUrl"] as? String, // Decode imageUrl
+                          let positionDict = imgDict["position"] as? [String: CGFloat], // Decode position
                           let x = positionDict["x"],
                           let y = positionDict["y"] else {
                         return nil
                     }
                     return CanvasImageModel(
                         id: id,
-                        imageData: imageData,
+                        imageData: nil, // Data is not stored in Firestore
+                        imageUrl: imageUrl, // Assign the decoded URL
                         position: CGPointCodable(CGPoint(x: x, y: y))
                     )
                 }
@@ -201,7 +212,8 @@ struct CanvasTextBoxModel: Codable, Identifiable {
 
 struct CanvasImageModel: Codable, Identifiable {
     var id: UUID
-    var imageData: Data
+    var imageData: Data? // Temporarily hold data before upload
+    var imageUrl: String? // Store URL in Firestore
     var position: CGPointCodable
 }
 

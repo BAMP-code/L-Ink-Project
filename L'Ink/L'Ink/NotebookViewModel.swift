@@ -62,7 +62,8 @@ class NotebookViewModel: ObservableObject {
             isPublic: false,
             isPinned: false,
             pages: [coverPage],
-            lastViewedPageIndex: 0
+            lastViewedPageIndex: 0,
+            coverImage: "Blue"
         )
         db.collection("notebooks").document(defaultNotebook.id).setData(defaultNotebook.dictionary) { error in
             if let error = error {
@@ -71,7 +72,7 @@ class NotebookViewModel: ObservableObject {
         }
     }
     
-    func createNotebook(title: String, isPublic: Bool, description: String? = nil) {
+    func createNotebook(title: String, isPublic: Bool, description: String? = nil, cover: String = "Blue") {
         let coverPage = Page(
             id: UUID().uuidString,
             content: "Welcome to your notebook!",
@@ -87,7 +88,8 @@ class NotebookViewModel: ObservableObject {
             isPublic: isPublic,
             isPinned: false,
             pages: [coverPage],
-            lastViewedPageIndex: 0
+            lastViewedPageIndex: 0,
+            coverImage: cover
         )
         db.collection("notebooks").document(notebook.id).setData(notebook.dictionary) { error in
             if let error = error {

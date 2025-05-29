@@ -7,8 +7,8 @@ enum PageType: String, Codable {
     case ink
 }
 
-struct Page: Identifiable, Codable {
-    var id: String
+public struct Page: Identifiable, Codable {
+    public var id: String
     var content: String
     var type: PageType
     var createdAt: Date
@@ -20,8 +20,8 @@ struct Page: Identifiable, Codable {
     var images: [CanvasImageModel]? // Store URL, not Data in Firestore
 }
 
-struct Notebook: Identifiable, Codable {
-    var id: String
+public struct Notebook: Identifiable, Codable {
+    public var id: String
     var title: String
     var description: String?
     var ownerId: String
@@ -204,20 +204,20 @@ struct Notebook: Identifiable, Codable {
 }
 
 // Add Codable models for text boxes and images if not already present
-struct CanvasTextBoxModel: Codable, Identifiable {
-    var id: UUID
+public struct CanvasTextBoxModel: Codable, Identifiable {
+    public var id: UUID
     var text: String
     var position: CGPointCodable
 }
 
-struct CanvasImageModel: Codable, Identifiable {
-    var id: UUID
+public struct CanvasImageModel: Codable, Identifiable {
+    public var id: UUID
     var imageData: Data? // Temporarily hold data before upload
     var imageUrl: String? // Store URL in Firestore
     var position: CGPointCodable
 }
 
-struct CGPointCodable: Codable {
+public struct CGPointCodable: Codable {
     var x: CGFloat
     var y: CGFloat
     init(_ point: CGPoint) { x = point.x; y = point.y }

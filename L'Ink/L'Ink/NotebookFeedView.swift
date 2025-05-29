@@ -9,15 +9,6 @@ import SwiftUI
 import FirebaseFirestore
 import FirebaseAuth
 
-struct NotebookPage: Identifiable {
-    let id: String
-    let content: String
-    let type: String
-    let order: Int
-    let createdAt: Date
-    let updatedAt: Date
-}
-
 class PublicNotebook: Identifiable, ObservableObject {
     let id = UUID()
     let firestoreId: String
@@ -30,7 +21,7 @@ class PublicNotebook: Identifiable, ObservableObject {
     @Published var likes: Int
     @Published var comments: [NotebookComment]
     let timestamp: Date
-    @Published var pages: [NotebookPage]  // Store actual pages instead of just count
+    @Published var pages: [Page]  // Use the public Page struct from Models
     @Published var isLiked: Bool = false
     @Published var isSaved: Bool = false
     @Published var prompts: [String]
@@ -44,7 +35,7 @@ class PublicNotebook: Identifiable, ObservableObject {
     @Published var timeSpentSeconds: Int = 0
     @Published var rankingScore: Double = 0.0
     
-    init(firestoreId: String, title: String, author: String, authorImage: String, coverImage: String, description: String, tags: [String], likes: Int, comments: [NotebookComment], timestamp: Date, pages: [NotebookPage], isLiked: Bool, isSaved: Bool, prompts: [String], isPublic: Bool, feedDescription: String, viewCount: Int = 0, saveCount: Int = 0, shareCount: Int = 0, timeSpentSeconds: Int = 0, rankingScore: Double = 0.0) {
+    init(firestoreId: String, title: String, author: String, authorImage: String, coverImage: String, description: String, tags: [String], likes: Int, comments: [NotebookComment], timestamp: Date, pages: [Page], isLiked: Bool, isSaved: Bool, prompts: [String], isPublic: Bool, feedDescription: String, viewCount: Int = 0, saveCount: Int = 0, shareCount: Int = 0, timeSpentSeconds: Int = 0, rankingScore: Double = 0.0) {
         self.firestoreId = firestoreId
         self.title = title
         self.author = author
@@ -165,23 +156,64 @@ class FeedViewModel: ObservableObject {
                     
                     // Extract and convert pages array
                     let pagesData = data["pages"] as? [[String: Any]] ?? []
-                    let pages = pagesData.compactMap { pageData -> NotebookPage? in
+                    let pages = pagesData.compactMap { pageData -> Page? in
                         guard let id = pageData["id"] as? String,
                               let content = pageData["content"] as? String,
-                              let type = pageData["type"] as? String,
+                              let typeString = pageData["type"] as? String,
+                              let type = PageType(rawValue: typeString),
                               let order = pageData["order"] as? Int,
                               let createdAt = (pageData["createdAt"] as? Timestamp)?.dateValue(),
                               let updatedAt = (pageData["updatedAt"] as? Timestamp)?.dateValue()
                         else {
                             return nil
                         }
-                        return NotebookPage(
+                        
+                        // Decode canvas elements
+                        let drawingData = pageData["drawingData"] as? Data
+                        
+                        let textBoxes = (pageData["textBoxes"] as? [[String: Any]])?.compactMap { boxDict -> CanvasTextBoxModel? in
+                            guard let idString = boxDict["id"] as? String,
+                                  let id = UUID(uuidString: idString),
+                                  let text = boxDict["text"] as? String,
+                                  let positionDict = boxDict["position"] as? [String: CGFloat],
+                                  let x = positionDict["x"],
+                                  let y = positionDict["y"] else {
+                                return nil
+                            }
+                            return CanvasTextBoxModel(
+                                id: id,
+                                text: text,
+                                position: CGPointCodable(CGPoint(x: x, y: y))
+                            )
+                        }
+                        
+                        let images = (pageData["images"] as? [[String: Any]])?.compactMap { imgDict -> CanvasImageModel? in
+                            guard let idString = imgDict["id"] as? String,
+                                  let id = UUID(uuidString: idString),
+                                  let imageUrl = imgDict["imageUrl"] as? String,
+                                  let positionDict = imgDict["position"] as? [String: CGFloat],
+                                  let x = positionDict["x"],
+                                  let y = positionDict["y"] else {
+                                return nil
+                            }
+                            return CanvasImageModel(
+                                id: id,
+                                imageData: nil, // Data is not stored in Firestore here
+                                imageUrl: imageUrl,
+                                position: CGPointCodable(CGPoint(x: x, y: y))
+                            )
+                        }
+                        
+                        return Page(
                             id: id,
                             content: content,
                             type: type,
-                            order: order,
                             createdAt: createdAt,
-                            updatedAt: updatedAt
+                            updatedAt: updatedAt,
+                            order: order,
+                            drawingData: drawingData,
+                            textBoxes: textBoxes,
+                            images: images
                         )
                     }
                     
@@ -578,23 +610,64 @@ class FeedViewModel: ObservableObject {
                     
                     // Extract and convert pages array
                     let pagesData = data["pages"] as? [[String: Any]] ?? []
-                    let pages = pagesData.compactMap { pageData -> NotebookPage? in
+                    let pages = pagesData.compactMap { pageData -> Page? in
                         guard let id = pageData["id"] as? String,
                               let content = pageData["content"] as? String,
-                              let type = pageData["type"] as? String,
+                              let typeString = pageData["type"] as? String,
+                              let type = PageType(rawValue: typeString),
                               let order = pageData["order"] as? Int,
                               let createdAt = (pageData["createdAt"] as? Timestamp)?.dateValue(),
                               let updatedAt = (pageData["updatedAt"] as? Timestamp)?.dateValue()
                         else {
                             return nil
                         }
-                        return NotebookPage(
+                        
+                        // Decode canvas elements
+                        let drawingData = pageData["drawingData"] as? Data
+                        
+                        let textBoxes = (pageData["textBoxes"] as? [[String: Any]])?.compactMap { boxDict -> CanvasTextBoxModel? in
+                            guard let idString = boxDict["id"] as? String,
+                                  let id = UUID(uuidString: idString),
+                                  let text = boxDict["text"] as? String,
+                                  let positionDict = boxDict["position"] as? [String: CGFloat],
+                                  let x = positionDict["x"],
+                                  let y = positionDict["y"] else {
+                                return nil
+                            }
+                            return CanvasTextBoxModel(
+                                id: id,
+                                text: text,
+                                position: CGPointCodable(CGPoint(x: x, y: y))
+                            )
+                        }
+                        
+                        let images = (pageData["images"] as? [[String: Any]])?.compactMap { imgDict -> CanvasImageModel? in
+                            guard let idString = imgDict["id"] as? String,
+                                  let id = UUID(uuidString: idString),
+                                  let imageUrl = imgDict["imageUrl"] as? String,
+                                  let positionDict = imgDict["position"] as? [String: CGFloat],
+                                  let x = positionDict["x"],
+                                  let y = positionDict["y"] else {
+                                return nil
+                            }
+                            return CanvasImageModel(
+                                id: id,
+                                imageData: nil, // Data is not stored in Firestore here
+                                imageUrl: imageUrl,
+                                position: CGPointCodable(CGPoint(x: x, y: y))
+                            )
+                        }
+                        
+                        return Page(
                             id: id,
                             content: content,
                             type: type,
-                            order: order,
                             createdAt: createdAt,
-                            updatedAt: updatedAt
+                            updatedAt: updatedAt,
+                            order: order,
+                            drawingData: drawingData,
+                            textBoxes: textBoxes,
+                            images: images
                         )
                     }
                     
@@ -780,19 +853,9 @@ struct NotebookFeedView: View {
                             
                             // Content Pages (Index 1 onwards)
                             if selectedPageIndex > 0 && selectedPageIndex - 1 < selectedNotebook.pages.count {
-                                VStack {
-                                    Text(selectedNotebook.pages[selectedPageIndex - 1].content)
-                                        .padding()
-                                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                                }
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .background(Color.white)
-                                .cornerRadius(12)
-                                .rotation3DEffect(
-                                    .degrees(rotation),
-                                    axis: (x: 0, y: 1, z: 0),
-                                    anchor: .trailing,
-                                    perspective: 0.5
+                                FeedPageView(
+                                    page: selectedNotebook.pages[selectedPageIndex - 1],
+                                    rotation: rotation
                                 )
                             }
                         }
@@ -1115,20 +1178,10 @@ struct PublicNotebookDetailView: View {
 
                 // Content Pages (Index 1 onwards)
                 if selectedPageIndex > 0 && selectedPageIndex - 1 < notebook.pages.count {
-                    VStack {
-                        Text(notebook.pages[selectedPageIndex - 1].content)
-                            .padding()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .rotation3DEffect(
-                            .degrees(rotation),
-                            axis: (x: 0, y: 1, z: 0),
-                            anchor: .trailing,
-                            perspective: 0.5
-                        )
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.white)
-                    .cornerRadius(12)
+                    FeedPageView(
+                        page: notebook.pages[selectedPageIndex - 1],
+                        rotation: rotation
+                    )
                 }
             }
             .frame(height: 500)
@@ -1448,7 +1501,7 @@ extension DateFormatter {
     }()
 }
 
-// Helper for getting text size (Might be needed for precise positioning if we don't use .position() directly)
+// Add a helper for getting text size (Might be needed for precise positioning if we don't use .position() directly)
 extension String {
     func heightOfString(usingFont font: UIFont) -> CGFloat {
         let fontAttributes = [NSAttributedString.Key.font: font]
@@ -1460,5 +1513,40 @@ extension String {
         let fontAttributes = [NSAttributedString.Key.font: font]
         let boundingRect = (self as NSString).boundingRect(with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude), options: .usesLineFragmentOrigin, attributes: fontAttributes, context: nil)
         return ceil(boundingRect.width)
+    }
+}
+
+// Add a helper view for page content
+struct FeedPageView: View {
+    let page: Page
+    let rotation: Double
+    
+    var body: some View {
+        VStack {
+//            Text(page.content) // Removed this as content is shown via text boxes
+//                .padding()
+//                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            
+            // Render text boxes
+            ForEach(page.textBoxes ?? [], id: \.id) { textBox in
+                Text(textBox.text)
+                    .position(x: textBox.position.x, y: textBox.position.y - 50) // Adjusted Y position further
+            }
+            
+            // Render images
+            ForEach(page.images ?? [], id: \.id) { image in
+                CanvasImageView(imageModel: image)
+                    .position(x: image.position.x, y: image.position.y - 50) // Adjusted Y position further
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.white)
+        .cornerRadius(12)
+        .rotation3DEffect(
+            .degrees(rotation),
+            axis: (x: 0, y: 1, z: 0),
+            anchor: .trailing,
+            perspective: 0.5
+        )
     }
 }

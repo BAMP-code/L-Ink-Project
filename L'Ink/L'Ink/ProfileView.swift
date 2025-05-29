@@ -533,23 +533,64 @@ struct ProfileView: View {
                     
                     // Extract and convert pages array
                     let pagesData = data["pages"] as? [[String: Any]] ?? []
-                    let pages = pagesData.compactMap { pageData -> NotebookPage? in
+                    let pages = pagesData.compactMap { pageData -> Page? in
                         guard let id = pageData["id"] as? String,
                               let content = pageData["content"] as? String,
-                              let type = pageData["type"] as? String,
+                              let typeString = pageData["type"] as? String,
+                              let type = PageType(rawValue: typeString),
                               let order = pageData["order"] as? Int,
                               let createdAt = (pageData["createdAt"] as? Timestamp)?.dateValue(),
                               let updatedAt = (pageData["updatedAt"] as? Timestamp)?.dateValue()
                         else {
                             return nil
                         }
-                        return NotebookPage(
+                        
+                        // Decode canvas elements
+                        let drawingData = pageData["drawingData"] as? Data
+                        
+                        let textBoxes = (pageData["textBoxes"] as? [[String: Any]])?.compactMap { boxDict -> CanvasTextBoxModel? in
+                            guard let idString = boxDict["id"] as? String,
+                                  let id = UUID(uuidString: idString),
+                                  let text = boxDict["text"] as? String,
+                                  let positionDict = boxDict["position"] as? [String: CGFloat],
+                                  let x = positionDict["x"],
+                                  let y = positionDict["y"] else {
+                                return nil
+                            }
+                            return CanvasTextBoxModel(
+                                id: id,
+                                text: text,
+                                position: CGPointCodable(CGPoint(x: x, y: y))
+                            )
+                        }
+                        
+                        let images = (pageData["images"] as? [[String: Any]])?.compactMap { imgDict -> CanvasImageModel? in
+                            guard let idString = imgDict["id"] as? String,
+                                  let id = UUID(uuidString: idString),
+                                  let imageUrl = imgDict["imageUrl"] as? String,
+                                  let positionDict = imgDict["position"] as? [String: CGFloat],
+                                  let x = positionDict["x"],
+                                  let y = positionDict["y"] else {
+                                return nil
+                            }
+                            return CanvasImageModel(
+                                id: id,
+                                imageData: nil, // Data is not stored in Firestore here
+                                imageUrl: imageUrl,
+                                position: CGPointCodable(CGPoint(x: x, y: y))
+                            )
+                        }
+                        
+                        return Page(
                             id: id,
                             content: content,
                             type: type,
-                            order: order,
                             createdAt: createdAt,
-                            updatedAt: updatedAt
+                            updatedAt: updatedAt,
+                            order: order,
+                            drawingData: drawingData,
+                            textBoxes: textBoxes,
+                            images: images
                         )
                     }
                     
@@ -561,7 +602,7 @@ struct ProfileView: View {
                         title: data["title"] as? String ?? "",
                         author: userId,
                         authorImage: authViewModel.currentUser?.profileImageURL ?? "person.circle.fill",
-                        coverImage: "Logo",
+                        coverImage: data["coverImage"] as? String ?? "Logo",
                         description: data["description"] as? String ?? "",
                         tags: [],
                         likes: 0,

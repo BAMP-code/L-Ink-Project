@@ -825,20 +825,9 @@ struct NotebookFeedView: View {
                             // Cover Page (Index 0)
                             if selectedPageIndex == 0 {
                                 VStack {
-                                    Text(selectedNotebook.title)
-                                        .font(.title2)
-                                        .fontWeight(.bold)
-                                        .multilineTextAlignment(.center)
-                                        .padding()
-                                    
                                     Image(selectedNotebook.coverImage)
                                         .resizable()
                                         .aspectRatio(4/5, contentMode: .fit)
-                                    
-                                    Text(selectedNotebook.feedDescription)
-                                        .font(.body)
-                                        .padding()
-                                        .multilineTextAlignment(.center)
                                 }
                                 .frame(maxWidth: .infinity)
                                 .background(Color.white)
@@ -846,7 +835,7 @@ struct NotebookFeedView: View {
                                 .rotation3DEffect(
                                     .degrees(rotation),
                                     axis: (x: 0, y: 1, z: 0),
-                                    anchor: .trailing,
+                                    anchor: .leading,
                                     perspective: 0.5
                                 )
                             }
@@ -1167,7 +1156,7 @@ struct PublicNotebookDetailView: View {
                         .rotation3DEffect(
                             .degrees(rotation),
                             axis: (x: 0, y: 1, z: 0),
-                            anchor: .trailing,
+                            anchor: .leading,
                             perspective: 0.5
                         )
                     }
@@ -1545,7 +1534,7 @@ struct FeedPageView: View {
         .rotation3DEffect(
             .degrees(rotation),
             axis: (x: 0, y: 1, z: 0),
-            anchor: .trailing,
+            anchor: .leading,
             perspective: 0.5
         )
     }

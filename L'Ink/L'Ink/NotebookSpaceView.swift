@@ -139,7 +139,7 @@ struct EmptyStateView: View {
         switch section {
         case 0: return "Create your first notebook to get started"
         case 1: return "Notebooks shared with you will appear here"
-        case 2: return "Favorite notebooks to access them quickly"
+        case 2: return "Coming Soon..."
         default: return ""
         }
     }

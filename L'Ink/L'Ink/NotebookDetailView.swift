@@ -1,5 +1,4 @@
 import SwiftUI
-import PencilKit
 
 struct NotebookDetailView: View {
     @State var notebook: Notebook
@@ -10,8 +9,6 @@ struct NotebookDetailView: View {
     @State private var rotation: Double = 0
     @State private var isFlipping = false
     @State private var isEditingPage = false
-    @State private var myDrawing = PKDrawing()
-    @State private var myIsDrawing = false
     @State private var myTextBoxes: [(id: UUID, text: String, position: CGPoint)] = []
     @State private var myImages: [(id: UUID, image: UIImage, position: CGPoint)] = []
     @State private var myShowImageInsert = false
@@ -19,8 +16,6 @@ struct NotebookDetailView: View {
     @State private var imageToAdd: UIImage? = nil
     @State private var selectedTextBoxID: UUID? = nil
     @State private var selectedImageID: UUID? = nil
-    @State private var drawingColors: [Color] = [.black, .red, .blue, .green, .orange]
-    @State private var selectedDrawingColor: Color = .black
     @State private var editingTextBoxID: UUID? = nil
     
     init(notebook: Notebook) {
@@ -49,10 +44,7 @@ struct NotebookDetailView: View {
                             )
                             .opacity(1)
                             .zIndex(0)
-                        MyDrawingCanvas(drawing: $myDrawing, isDrawingEnabled: myIsDrawing, drawingColor: selectedDrawingColor)
-                            .background(Color.clear)
-                            .zIndex(myIsDrawing ? 2 : 0)
-                        if !myIsDrawing || (!myTextBoxes.isEmpty || !myImages.isEmpty) {
+                        if !myTextBoxes.isEmpty || !myImages.isEmpty {
                             ForEach($myTextBoxes, id: \.id) { $box in
                                 MyCanvasTextBox(
                                     text: $box.text,
@@ -156,11 +148,6 @@ struct NotebookDetailView: View {
             // Edit menu below the page in edit mode
             if isEditingPage {
                 HStack(spacing: 32) {
-                    Button(action: { myIsDrawing.toggle() }) {
-                        Image(systemName: "pencil.tip")
-                            .font(.title2)
-                            .foregroundColor(myIsDrawing ? .blue : .primary)
-                    }
                     Button(action: { addMyTextBox() }) {
                         Image(systemName: "textformat")
                             .font(.title2)
@@ -171,24 +158,6 @@ struct NotebookDetailView: View {
                     }
                 }
                 .padding(.vertical, 8)
-                // Color picker menu for drawing
-                if myIsDrawing {
-                    HStack(spacing: 20) {
-                        ForEach(drawingColors, id: \.self) { color in
-                            Circle()
-                                .fill(color)
-                                .frame(width: 28, height: 28)
-                                .overlay(
-                                    Circle()
-                                        .stroke(Color.gray, lineWidth: selectedDrawingColor == color ? 3 : 1)
-                                )
-                                .onTapGesture {
-                                    selectedDrawingColor = color
-                                }
-                        }
-                    }
-                    .padding(.bottom, 8)
-                }
             }
             Text("Page \(selectedPageIndex + 1) of \(notebook.pages.count)")
                 .font(.system(size: 14, weight: .medium))
@@ -200,7 +169,6 @@ struct NotebookDetailView: View {
             Button(action: {
                 if isEditingPage {
                     saveCanvasToPage()
-                    // Clear all selection states when exiting edit mode
                     selectedTextBoxID = nil
                     selectedImageID = nil
                     editingTextBoxID = nil
@@ -275,251 +243,8 @@ struct NotebookDetailView: View {
         updatedNotebook.lastViewedPageIndex = selectedPageIndex
         viewModel.updateNotebook(updatedNotebook)
     }
-    
-    // New Drawing Canvas
-    struct MyDrawingCanvas: UIViewRepresentable {
-        @Binding var drawing: PKDrawing
-        var isDrawingEnabled: Bool
-        var drawingColor: Color
-        func makeUIView(context: Context) -> PKCanvasView {
-            let canvasView = PKCanvasView()
-            canvasView.drawingPolicy = .anyInput
-            canvasView.isUserInteractionEnabled = isDrawingEnabled
-            canvasView.backgroundColor = .clear
-            canvasView.tool = PKInkingTool(.pen, color: UIColor(drawingColor), width: 1)
-            canvasView.drawing = drawing
-            canvasView.delegate = context.coordinator
-            return canvasView
-        }
-        func updateUIView(_ uiView: PKCanvasView, context: Context) {
-            uiView.isUserInteractionEnabled = isDrawingEnabled
-            // Only set the tool if it changed
-            let currentTool = uiView.tool as? PKInkingTool
-            let newTool = PKInkingTool(.pen, color: UIColor(drawingColor), width: 1)
-            if currentTool?.color != newTool.color || currentTool?.inkType != newTool.inkType || currentTool?.width != newTool.width {
-                uiView.tool = newTool
-            }
-            if uiView.drawing != drawing {
-                uiView.drawing = drawing
-            }
-        }
-        func makeCoordinator() -> Coordinator {
-            Coordinator(self)
-        }
-        class Coordinator: NSObject, PKCanvasViewDelegate {
-            var parent: MyDrawingCanvas
-            init(_ parent: MyDrawingCanvas) { self.parent = parent }
-            func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-                parent.drawing = canvasView.drawing
-            }
-        }
-    }
 
-    // New Draggable Text Box
-    struct MyCanvasTextBox: View {
-        @Binding var text: String
-        @State private var position: CGPoint
-        var selected: Bool
-        @Binding var isEditing: Bool
-        var onSelect: () -> Void
-        var onDelete: () -> Void
-        @GestureState private var dragOffset: CGSize = .zero
-        @State private var isMoving: Bool = false
-        @State private var dragStart: CGPoint? = nil
-        init(text: Binding<String>, position: CGPoint, selected: Bool, isEditing: Binding<Bool>, onSelect: @escaping () -> Void, onDelete: @escaping () -> Void) {
-            self._text = text
-            self._position = State(initialValue: position)
-            self.selected = selected
-            self._isEditing = isEditing
-            self.onSelect = onSelect
-            self.onDelete = onDelete
-        }
-        var body: some View {
-            ZStack(alignment: .topTrailing) {
-                if selected && isEditing {
-                    TextEditor(text: $text)
-                        .font(.body)
-                        .frame(minWidth: 60, maxWidth: 180, minHeight: 32)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(8)
-                        .background(Color.clear)
-                        .scrollContentBackground(.hidden)
-                        .cornerRadius(8)
-                        .onTapGesture { onSelect() }
-                } else {
-                    Text(text.isEmpty ? " " : text)
-                        .font(.body)
-                        .frame(minWidth: 60, maxWidth: 180, minHeight: 32, alignment: .topLeading)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(8)
-                        .background(Color.clear)
-                        .cornerRadius(8)
-                        .onTapGesture {
-                            onSelect()
-                            isEditing = true
-                        }
-                        .gesture(
-                            DragGesture()
-                                .updating($dragOffset) { value, state, _ in
-                                    state = value.translation
-                                }
-                                .onChanged { _ in onSelect() }
-                                .onEnded { value in
-                                    position.x += value.translation.width
-                                    position.y += value.translation.height
-                                }
-                        )
-                }
-                if selected {
-                    // Delete button (top right)
-                    Button(action: onDelete) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.red)
-                            .background(Color.white)
-                            .clipShape(Circle())
-                    }
-                    .offset(x: 10, y: -10)
-                    // Move button (bottom right)
-                    Button(action: {}) {
-                        Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 22, height: 22)
-                            .foregroundColor(.blue)
-                            .background(Color.white)
-                            .clipShape(Circle())
-                            .shadow(radius: 1)
-                    }
-                    .offset(x: 10, y: 32)
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                if dragStart == nil { dragStart = position }
-                                if let start = dragStart {
-                                    isMoving = true
-                                    position.x = start.x + value.translation.width
-                                    position.y = start.y + value.translation.height
-                                }
-                            }
-                            .onEnded { _ in
-                                isMoving = false
-                                dragStart = nil
-                            }
-                    )
-                }
-            }
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(style: StrokeStyle(lineWidth: 2, dash: [6]))
-                    .foregroundColor(selected ? Color.blue.opacity(0.7) : .clear)
-            )
-            .position(
-                x: position.x.isFinite ? position.x : 100,
-                y: position.y.isFinite ? position.y : 100
-            )
-        }
-    }
-
-    // New Draggable Image
-    struct MyCanvasImage: View {
-        let image: UIImage
-        @State private var position: CGPoint
-        var selected: Bool
-        var onSelect: () -> Void
-        var onDelete: () -> Void
-        @GestureState private var dragOffset: CGSize = .zero
-        @State private var isMoving: Bool = false
-        @State private var dragStart: CGPoint? = nil
-        init(image: UIImage, position: CGPoint, selected: Bool, onSelect: @escaping () -> Void, onDelete: @escaping () -> Void) {
-            self.image = image
-            self._position = State(initialValue: position)
-            self.selected = selected
-            self.onSelect = onSelect
-            self.onDelete = onDelete
-        }
-        var body: some View {
-            ZStack(alignment: .topTrailing) {
-                Image(uiImage: image)
-                    .resizable()
-                    .frame(width: 100, height: 100)
-                    .cornerRadius(8)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(style: StrokeStyle(lineWidth: 2, dash: [6]))
-                            .foregroundColor(selected ? Color.blue.opacity(0.7) : .clear)
-                    )
-                    .gesture(
-                        DragGesture()
-                            .updating($dragOffset) { value, state, _ in
-                                state = value.translation
-                            }
-                            .onChanged { _ in onSelect() }
-                            .onEnded { value in
-                                position.x += value.translation.width
-                                position.y += value.translation.height
-                            }
-                    )
-                if selected {
-                    // Delete button (top right)
-                    Button(action: onDelete) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.red)
-                            .background(Color.white)
-                            .clipShape(Circle())
-                    }
-                    .offset(x: 10, y: -10)
-                    // Move button (bottom right)
-                    Button(action: {}) {
-                        Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 22, height: 22)
-                            .foregroundColor(.blue)
-                            .background(Color.white)
-                            .clipShape(Circle())
-                            .shadow(radius: 1)
-                    }
-                    .offset(x: 10, y: 90)
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                if dragStart == nil { dragStart = position }
-                                if let start = dragStart {
-                                    isMoving = true
-                                    position.x = start.x + value.translation.width
-                                    position.y = start.y + value.translation.height
-                                }
-                            }
-                            .onEnded { _ in
-                                isMoving = false
-                                dragStart = nil
-                            }
-                    )
-                }
-            }
-            .position(
-                x: position.x.isFinite ? position.x : 100,
-                y: position.y.isFinite ? position.y : 100
-            )
-            .onTapGesture { onSelect() }
-        }
-    }
-
-    // New function to add a text box
-    private func addMyTextBox() {
-        myTextBoxes.append((UUID(), "New Text", CGPoint(x: 150, y: 150)))
-    }
-
-    // New function to add an image (use a real placeholder image)
-    private func addMyImage() {
-        if let placeholder = UIImage(systemName: "photo") {
-            myImages.append((UUID(), placeholder, CGPoint(x: 200, y: 200)))
-        }
-    }
-
-    // Save canvas state to page when toggling out of edit mode
     private func saveCanvasToPage() {
-        let drawingData = myDrawing.dataRepresentation()
         let textBoxModels: [CanvasTextBoxModel] = myTextBoxes.map { box in
             CanvasTextBoxModel(
                 id: box.id,
@@ -537,48 +262,32 @@ struct NotebookDetailView: View {
             }
             return nil
         }
-        
-        // Create updated page
         var updatedPage = notebook.pages[selectedPageIndex]
-        updatedPage.drawingData = drawingData
         updatedPage.textBoxes = textBoxModels
         updatedPage.images = imageModels
         updatedPage.updatedAt = Date()
-
-        // Update the notebook's pages array
         var updatedNotebook = notebook
         updatedNotebook.pages[selectedPageIndex] = updatedPage
         updatedNotebook.updatedAt = Date()
-
-        // Persist the change
         viewModel.updateNotebook(updatedNotebook)
-        // Update local notebook so UI reflects changes
         notebook = updatedNotebook
     }
 
-    // Load canvas state from page when entering edit mode or flipping pages
     private func loadCanvasFromPage() {
         let page = notebook.pages[selectedPageIndex]
-        
-        // Load drawing
-        if let data = page.drawingData, let drawing = try? PKDrawing(data: data) {
-            myDrawing = drawing
-        } else {
-            myDrawing = PKDrawing()
-        }
-        
-        // Load text boxes with their positions
         myTextBoxes = page.textBoxes?.map { box in
             (box.id, box.text, box.position.cgPoint)
         } ?? []
-        
-        // Load images with their positions
         myImages = page.images?.compactMap { model in
             if let image = UIImage(data: model.imageData) {
                 return (model.id, image, model.position.cgPoint)
             }
             return nil
         } ?? []
+    }
+
+    private func addMyTextBox() {
+        myTextBoxes.append((UUID(), "New Text", CGPoint(x: 150, y: 150)))
     }
 }
 
@@ -763,12 +472,6 @@ struct PageView: View {
                             }
                         }
                     }
-                    
-                    // Display drawing if present
-                    if let drawingData = page.drawingData,
-                       let drawing = try? PKDrawing(data: drawingData) {
-                        DrawingPreview(drawing: drawing)
-                    }
                 }
             }
             .frame(height: 400)
@@ -780,22 +483,6 @@ struct PageView: View {
             .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 1)
         }
         .frame(width: 360, height: 400)
-    }
-}
-
-struct DrawingPreview: UIViewRepresentable {
-    let drawing: PKDrawing
-    
-    func makeUIView(context: Context) -> PKCanvasView {
-        let canvas = PKCanvasView()
-        canvas.isUserInteractionEnabled = false
-        canvas.backgroundColor = .clear
-        canvas.drawing = drawing
-        return canvas
-    }
-    
-    func updateUIView(_ uiView: PKCanvasView, context: Context) {
-        uiView.drawing = drawing
     }
 }
 
@@ -824,7 +511,6 @@ struct PageContentView: View {
     let page: Page
     let onUpdate: (String) -> Void
     @State private var textContent: String
-    @State private var canvasView = PKCanvasView()
     
     init(page: Page, onUpdate: @escaping (String) -> Void) {
         self.page = page
@@ -833,36 +519,150 @@ struct PageContentView: View {
     }
     
     var body: some View {
-        Group {
-            if page.type == .text {
-                TextEditor(text: $textContent)
-                    .onChange(of: textContent) { oldValue, newValue in
-                        onUpdate(newValue)
-                    }
-            } else {
-                InkCanvasView(canvasView: $canvasView)
-                    .onChange(of: canvasView.drawing) { oldValue, newValue in
-                        // Convert drawing to data and update
-                        let data = canvasView.drawing.dataRepresentation()
-                        onUpdate(data.base64EncodedString())
-                    }
+        TextEditor(text: $textContent)
+            .onChange(of: textContent) { oldValue, newValue in
+                onUpdate(newValue)
             }
-        }
-        .padding()
+            .padding()
     }
 }
 
-struct InkCanvasView: UIViewRepresentable {
-    @Binding var canvasView: PKCanvasView
-    
-    func makeUIView(context: Context) -> PKCanvasView {
-        canvasView.tool = PKInkingTool(.pen, color: .black, width: 1)
-        canvasView.backgroundColor = .clear
-        canvasView.drawingPolicy = .anyInput
-        return canvasView
+struct MyCanvasTextBox: View {
+    @Binding var text: String
+    @State private var position: CGPoint
+    var selected: Bool
+    @Binding var isEditing: Bool
+    var onSelect: () -> Void
+    var onDelete: () -> Void
+    @GestureState private var dragOffset: CGSize = .zero
+    @State private var isMoving: Bool = false
+    @State private var dragStart: CGPoint? = nil
+
+    init(text: Binding<String>, position: CGPoint, selected: Bool, isEditing: Binding<Bool>, onSelect: @escaping () -> Void, onDelete: @escaping () -> Void) {
+        self._text = text
+        self._position = State(initialValue: position)
+        self.selected = selected
+        self._isEditing = isEditing
+        self.onSelect = onSelect
+        self.onDelete = onDelete
     }
-    
-    func updateUIView(_ uiView: PKCanvasView, context: Context) {}
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            if selected && isEditing {
+                TextEditor(text: $text)
+                    .font(.body)
+                    .frame(minWidth: 60, maxWidth: 180, minHeight: 32)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(8)
+                    .background(Color.clear)
+                    .scrollContentBackground(.hidden)
+                    .cornerRadius(8)
+                    .onTapGesture { onSelect() }
+            } else {
+                Text(text.isEmpty ? " " : text)
+                    .font(.body)
+                    .frame(minWidth: 60, maxWidth: 180, minHeight: 32, alignment: .topLeading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(8)
+                    .background(Color.clear)
+                    .cornerRadius(8)
+                    .onTapGesture {
+                        onSelect()
+                        isEditing = true
+                    }
+                    .gesture(
+                        DragGesture()
+                            .updating($dragOffset) { value, state, _ in
+                                state = value.translation
+                            }
+                            .onChanged { _ in onSelect() }
+                            .onEnded { value in
+                                position.x += value.translation.width
+                                position.y += value.translation.height
+                            }
+                    )
+            }
+            if selected {
+                // Delete button (top right)
+                Button(action: onDelete) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.red)
+                        .background(Color.white)
+                        .clipShape(Circle())
+                }
+                .offset(x: 10, y: -10)
+            }
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(style: StrokeStyle(lineWidth: 2, dash: [6]))
+                .foregroundColor(selected ? Color.blue.opacity(0.7) : .clear)
+        )
+        .position(
+            x: position.x.isFinite ? position.x : 100,
+            y: position.y.isFinite ? position.y : 100
+        )
+    }
+}
+
+struct MyCanvasImage: View {
+    let image: UIImage
+    @State private var position: CGPoint
+    var selected: Bool
+    var onSelect: () -> Void
+    var onDelete: () -> Void
+    @GestureState private var dragOffset: CGSize = .zero
+    @State private var isMoving: Bool = false
+    @State private var dragStart: CGPoint? = nil
+
+    init(image: UIImage, position: CGPoint, selected: Bool, onSelect: @escaping () -> Void, onDelete: @escaping () -> Void) {
+        self.image = image
+        self._position = State(initialValue: position)
+        self.selected = selected
+        self.onSelect = onSelect
+        self.onDelete = onDelete
+    }
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Image(uiImage: image)
+                .resizable()
+                .frame(width: 100, height: 100)
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(style: StrokeStyle(lineWidth: 2, dash: [6]))
+                        .foregroundColor(selected ? Color.blue.opacity(0.7) : .clear)
+                )
+                .gesture(
+                    DragGesture()
+                        .updating($dragOffset) { value, state, _ in
+                            state = value.translation
+                        }
+                        .onChanged { _ in onSelect() }
+                        .onEnded { value in
+                            position.x += value.translation.width
+                            position.y += value.translation.height
+                        }
+                )
+            if selected {
+                // Delete button (top right)
+                Button(action: onDelete) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.red)
+                        .background(Color.white)
+                        .clipShape(Circle())
+                }
+                .offset(x: 10, y: -10)
+            }
+        }
+        .position(
+            x: position.x.isFinite ? position.x : 100,
+            y: position.y.isFinite ? position.y : 100
+        )
+        .onTapGesture { onSelect() }
+    }
 }
 
 

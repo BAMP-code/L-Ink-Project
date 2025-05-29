@@ -1332,10 +1332,12 @@ struct PublicNotebookView: View {
                     Image(systemName: "message")
                 }
                 
-                Button(action: {
-                    viewModel.incrementShareCount(for: notebook)
-                }) {
+                ShareLink(item: "Check out this notebook: \(notebook.title) - Link ID: \(notebook.firestoreId)") {
                     Image(systemName: "square.and.arrow.up")
+                }
+                .onTapGesture {
+                    // Optionally increment share count here, although ShareLink handles the interaction
+                    viewModel.incrementShareCount(for: notebook)
                 }
                 
                 Spacer()
@@ -1426,7 +1428,7 @@ struct NotebookCommentsView: View {
                                 .font(.headline)
                             Text(comment.text)
                                 .font(.body)
-                            Text(comment.timestamp, style: .relative)
+                            Text(formattedTimeAgo(from: comment.timestamp))
                                 .font(.caption)
                                 .foregroundColor(.gray)
                         }
@@ -1478,6 +1480,21 @@ struct NotebookCommentsView: View {
                 }
             }
         }
+    }
+    
+    // Add a helper function for time formatting
+    func formattedTimeAgo(from date: Date) -> String {
+        let calendar = Calendar.current
+        let now = Date()
+        let components = calendar.dateComponents([.minute, .second], from: date, to: now)
+        
+        if let minute = components.minute, minute > 0 {
+            return "\(minute)m ago"
+        } else if let second = components.second, second >= 0 {
+            return "\(second)s ago"
+        }
+        // Should not happen for typical comments, but as a fallback
+        return "just now"
     }
 }
 

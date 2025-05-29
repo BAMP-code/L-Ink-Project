@@ -569,6 +569,7 @@ struct ProfileView: View {
                         timestamp: createdAt,
                         pages: sortedPages,
                         isLiked: false,
+                        isSaved: false,
                         prompts: [],
                         isPublic: true,
                         feedDescription: data["feedDescription"] as? String ?? ""

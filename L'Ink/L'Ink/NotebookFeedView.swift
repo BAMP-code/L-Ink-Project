@@ -18,31 +18,55 @@ struct NotebookPage: Identifiable {
     let updatedAt: Date
 }
 
-struct PublicNotebook: Identifiable {
+class PublicNotebook: Identifiable, ObservableObject {
     let id = UUID()
     let firestoreId: String
-    let title: String
-    let author: String
-    let authorImage: String
-    let coverImage: String
-    let description: String
-    let tags: [String]
-    var likes: Int
-    var comments: [NotebookComment]
+    @Published var title: String
+    @Published var author: String
+    @Published var authorImage: String
+    @Published var coverImage: String
+    @Published var description: String
+    @Published var tags: [String]
+    @Published var likes: Int
+    @Published var comments: [NotebookComment]
     let timestamp: Date
-    let pages: [NotebookPage]  // Store actual pages instead of just count
-    var isLiked: Bool = false
-    var isSaved: Bool = false
-    let prompts: [String]
-    var isPublic: Bool = false
-    var feedDescription: String = ""  // Add this for the feed post description
+    @Published var pages: [NotebookPage]  // Store actual pages instead of just count
+    @Published var isLiked: Bool = false
+    @Published var isSaved: Bool = false
+    @Published var prompts: [String]
+    @Published var isPublic: Bool = false
+    @Published var feedDescription: String = ""  // Add this for the feed post description
     
     // Ranking score properties
-    var viewCount: Int = 0
-    var saveCount: Int = 0
-    var shareCount: Int = 0
-    var timeSpentSeconds: Int = 0
-    var rankingScore: Double = 0.0
+    @Published var viewCount: Int = 0
+    @Published var saveCount: Int = 0
+    @Published var shareCount: Int = 0
+    @Published var timeSpentSeconds: Int = 0
+    @Published var rankingScore: Double = 0.0
+    
+    init(firestoreId: String, title: String, author: String, authorImage: String, coverImage: String, description: String, tags: [String], likes: Int, comments: [NotebookComment], timestamp: Date, pages: [NotebookPage], isLiked: Bool, isSaved: Bool, prompts: [String], isPublic: Bool, feedDescription: String, viewCount: Int = 0, saveCount: Int = 0, shareCount: Int = 0, timeSpentSeconds: Int = 0, rankingScore: Double = 0.0) {
+        self.firestoreId = firestoreId
+        self.title = title
+        self.author = author
+        self.authorImage = authorImage
+        self.coverImage = coverImage
+        self.description = description
+        self.tags = tags
+        self.likes = likes
+        self.comments = comments
+        self.timestamp = timestamp
+        self.pages = pages
+        self.isLiked = isLiked
+        self.isSaved = isSaved
+        self.prompts = prompts
+        self.isPublic = isPublic
+        self.feedDescription = feedDescription
+        self.viewCount = viewCount
+        self.saveCount = saveCount
+        self.shareCount = shareCount
+        self.timeSpentSeconds = timeSpentSeconds
+        self.rankingScore = rankingScore
+    }
 }
 
 struct NotebookComment: Identifiable {
@@ -184,30 +208,47 @@ class FeedViewModel: ObservableObject {
                     
                     let ownerId = data["ownerId"] as? String ?? ""
                     
-                    // Fetch the user's profile image
-                    self?.fetchUserProfileImage(userId: ownerId)
-                    
+                    // Create the PublicNotebook object
                     var notebook = PublicNotebook(
                         firestoreId: document.documentID,
                         title: data["title"] as? String ?? "",
-                        author: ownerId,
+                        author: ownerId, // Use ownerId initially
                         authorImage: self?.userProfileImages[ownerId] ?? "person.circle.fill",
                         coverImage: data["coverImage"] as? String ?? "Blue",
                         description: data["description"] as? String ?? "",
-                        tags: [],
+                        tags: [], // Assuming tags are not stored in notebook document
                         likes: likes.count,
                         comments: comments,
                         timestamp: createdAt,
                         pages: sortedPages,
                         isLiked: self?.likedNotebooks.contains(document.documentID) ?? false,
-                        prompts: [],
+                        isSaved: false, // Initialize as false
+                        prompts: [], // Assuming prompts are not stored in notebook document
                         isPublic: data["isPublic"] as? Bool ?? false,
-                        feedDescription: data["feedDescription"] as? String ?? ""
+                        feedDescription: data["feedDescription"] as? String ?? "",
+                        viewCount: viewCount,
+                        timeSpentSeconds: timeSpentSeconds
                     )
                     
-                    // Set the metrics
-                    notebook.viewCount = viewCount
-                    notebook.timeSpentSeconds = timeSpentSeconds
+                    // Asynchronously fetch the author's name
+                    self?.db.collection("users").document(ownerId).getDocument { [weak self] userSnapshot, userError in
+                        guard let self = self, let userData = userSnapshot?.data() else {
+                            print("❌ Error fetching user data for ID \(ownerId): \(userError?.localizedDescription ?? "Unknown error")")
+                            return
+                        }
+                        
+                        if let username = userData["username"] as? String {
+                            // Update the notebook object in the published array on the main thread
+                            DispatchQueue.main.async {
+                                if let index = self.notebooks.firstIndex(where: { $0.firestoreId == notebook.firestoreId }) {
+                                    self.notebooks[index].author = username
+                                    // Optionally update authorImage here if needed
+                                }
+                            }
+                        } else {
+                            print("❌ 'username' field not found or is not a String for user ID \(ownerId)")
+                        }
+                    }
                     
                     return notebook
                 }
@@ -217,6 +258,7 @@ class FeedViewModel: ObservableObject {
             }
     }
     
+    // MARK: - Ranking Calculations
     // Calculate ranking scores for all notebooks
     private func calculateRankingScores() {
         let now = Date()
@@ -572,6 +614,7 @@ class FeedViewModel: ObservableObject {
                         timestamp: createdAt,
                         pages: sortedPages,
                         isLiked: false,
+                        isSaved: false,
                         prompts: [],
                         isPublic: data["isPublic"] as? Bool ?? false,
                         feedDescription: data["feedDescription"] as? String ?? ""
@@ -1177,7 +1220,7 @@ struct PublicNotebookDetailView: View {
 }
 
 struct PublicNotebookView: View {
-    let notebook: PublicNotebook
+    @ObservedObject var notebook: PublicNotebook
     @ObservedObject var viewModel: FeedViewModel
     @Binding var selectedNotebook: PublicNotebook?
     @State private var showingComments = false

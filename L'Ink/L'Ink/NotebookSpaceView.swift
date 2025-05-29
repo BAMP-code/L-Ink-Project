@@ -221,8 +221,8 @@ struct NotebookSpaceView: View {
                 }
             }
             .sheet(isPresented: $showingNewNotebook) {
-                NewNotebookView { title, description, isPublic in
-                    viewModel.createNotebook(title: title, isPublic: isPublic, description: description)
+                NewNotebookView { title, description, isPublic, cover in
+                    viewModel.createNotebook(title: title, isPublic: isPublic, description: description, cover: cover)
                 }
             }
             .alert("Delete Notebook", isPresented: $showingDeleteAlert) {
@@ -251,17 +251,17 @@ struct NotebookCard: View {
     @State private var showOptions = false
     @State private var navigate = false
     
-    private var gradientColors: [Color] {
-        let colors: [[Color]] = [
-            [Color(hex: "2E7D32"), Color(hex: "43A047")], // Dark green to medium green
-            [Color(hex: "388E3C"), Color(hex: "4CAF50")], // Medium green to light green
-            [Color(hex: "43A047"), Color(hex: "66BB6A")], // Medium green to lighter green
-            [Color(hex: "4CAF50"), Color(hex: "81C784")], // Light green to very light green
-            [Color(hex: "66BB6A"), Color(hex: "A5D6A7")]  // Lighter green to mint green
-        ]
-        // Change color every 50 points of scroll for more frequent changes
-        let colorIndex = (abs(Int(scrollOffset)) / 50) % colors.count
-        return colors[colorIndex]
+    // Helper to match spine color to cover
+    private func spineColor(for cover: String) -> Color {
+        switch cover {
+        case "Blue": return Color(hex: "1E4D8B")
+        case "Cookbook": return Color(hex: "B7A16A")
+        case "Green": return Color(hex: "388E3C")
+        case "Grey": return Color(hex: "757575")
+        case "Journal": return Color(hex: "A0522D")
+        case "Pink": return Color(hex: "D81B60")
+        default: return Color.gray
+        }
     }
     
     var body: some View {
@@ -274,16 +274,7 @@ struct NotebookCard: View {
             HStack(spacing: 0) {
                 // Spine
                 Rectangle()
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                gradientColors[0].opacity(0.95),
-                                gradientColors[1].opacity(0.85)
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                    .fill(spineColor(for: notebook.coverImage))
                     .frame(width: 40)
                     .overlay(
                         // Spine text
@@ -299,35 +290,16 @@ struct NotebookCard: View {
                 
                 // Cover
                 ZStack {
-                    // Cover background with dynamic gradient
-                    Rectangle()
-                        .fill(
-                            LinearGradient(
-                                gradient: Gradient(colors: [
-                                    gradientColors[0].opacity(0.85),
-                                    gradientColors[1].opacity(0.75)
-                                ]),
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                    Image(notebook.coverImage)
+                        .resizable()
+                        .aspectRatio(3/4, contentMode: .fit)
                         .frame(width: 320, height: 400)
-                    
+                        .cornerRadius(8)
                     // Content
                     VStack {
                         Spacer()
-                        
-                        // Title
-                        Text(notebook.title)
-                            .font(.system(size: 32, weight: .bold))
-                            .foregroundColor(.white)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .padding(.horizontal, 24)
-                            .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
-                        
+                        // Title removed from here
                         Spacer()
-                        
                         // Notebook info
                         HStack {
                             if notebook.isPinned {
@@ -477,17 +449,49 @@ struct NewNotebookView: View {
     @State private var title = ""
     @State private var description = ""
     @State private var isPublic = false
-    
-    var onCreate: (String, String?, Bool) -> Void
+    @State private var selectedCover: String = "Blue"
+    let coverTemplates = ["Blue", "Cookbook", "Green", "Grey", "Journal", "Pink"]
+    var onCreate: (String, String?, Bool, String) -> Void
     
     var body: some View {
         NavigationView {
             Form {
+                // Cover picker at the top
+                Section(header: Text("Choose a Cover")) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 16) {
+                            ForEach(coverTemplates, id: \.self) { template in
+                                ZStack {
+                                    Image(template)
+                                        .resizable()
+                                        .aspectRatio(3/4, contentMode: .fit)
+                                        .frame(width: 80, height: 100)
+                                        .cornerRadius(10)
+                                        .shadow(radius: selectedCover == template ? 8 : 2)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 10)
+                                                .stroke(selectedCover == template ? Color.blue : Color.clear, lineWidth: 4)
+                                        )
+                                        .onTapGesture {
+                                            selectedCover = template
+                                        }
+                                    if selectedCover == template {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.blue)
+                                            .background(Color.white)
+                                            .clipShape(Circle())
+                                            .offset(x: 30, y: -40)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.vertical, 8)
+                    }
+                }
                 Section(header: Text("Notebook Details")) {
                     TextField("Title", text: $title)
                     TextField("Description", text: $description)
                 }
-                
                 Section(header: Text("Settings")) {
                     Toggle("Public Notebook", isOn: $isPublic)
                 }
@@ -498,7 +502,7 @@ struct NewNotebookView: View {
                     presentationMode.wrappedValue.dismiss()
                 },
                 trailing: Button("Create") {
-                    onCreate(title, description.isEmpty ? nil : description, isPublic)
+                    onCreate(title, description.isEmpty ? nil : description, isPublic, selectedCover)
                     presentationMode.wrappedValue.dismiss()
                 }
                 .disabled(title.isEmpty)

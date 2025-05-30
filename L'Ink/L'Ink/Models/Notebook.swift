@@ -90,26 +90,36 @@ public struct Notebook: Identifiable, Codable {
                 
                 if let textBoxes = page.textBoxes {
                     pageDict["textBoxes"] = textBoxes.map { box in
-                        [
+                        var boxDict: [String: Any] = [
                             "id": box.id.uuidString,
                             "text": box.text,
                             "position": ["x": box.position.x, "y": box.position.y]
                         ]
+                        
+                        if let size = box.size {
+                            boxDict["size"] = ["width": size.width, "height": size.height]
+                        }
+                        
+                        return boxDict
                     }
                 }
                 
                 if let images = page.images {
-                    pageDict["images"] = images.compactMap { img in // Use compactMap to exclude images without URLs
-                        // ONLY include images that have a download URL
+                    pageDict["images"] = images.compactMap { img in
                         if let imageUrl = img.imageUrl {
-                            return [
+                            var imgDict: [String: Any] = [
                                 "id": img.id.uuidString,
                                 "imageUrl": imageUrl,
                                 "position": ["x": img.position.x, "y": img.position.y]
                             ]
-                        } else {
-                           return nil // Don't save images without a URL yet
+                            
+                            if let size = img.size {
+                                imgDict["size"] = ["width": size.width, "height": size.height]
+                            }
+                            
+                            return imgDict
                         }
+                        return nil
                     }
                 }
                 
@@ -161,26 +171,42 @@ public struct Notebook: Identifiable, Codable {
                           let y = positionDict["y"] else {
                         return nil
                     }
+                    var size: CGSizeCodable?
+                    if let sizeDict = boxDict["size"] as? [String: CGFloat],
+                       let width = sizeDict["width"],
+                       let height = sizeDict["height"] {
+                        size = CGSizeCodable(CGSize(width: width, height: height))
+                    }
                     return CanvasTextBoxModel(
                         id: id,
                         text: text,
-                        position: CGPointCodable(CGPoint(x: x, y: y))
+                        position: CGPointCodable(CGPoint(x: x, y: y)),
+                        size: size
                     )
                 },
                 images: (pageDict["images"] as? [[String: Any]])?.compactMap { imgDict -> CanvasImageModel? in
                     guard let idString = imgDict["id"] as? String,
                           let id = UUID(uuidString: idString),
-                          let imageUrl = imgDict["imageUrl"] as? String, // Decode imageUrl
-                          let positionDict = imgDict["position"] as? [String: CGFloat], // Decode position
+                          let imageUrl = imgDict["imageUrl"] as? String,
+                          let positionDict = imgDict["position"] as? [String: CGFloat],
                           let x = positionDict["x"],
                           let y = positionDict["y"] else {
                         return nil
                     }
+                    
+                    var size: CGSizeCodable? = nil
+                    if let sizeDict = imgDict["size"] as? [String: CGFloat],
+                       let width = sizeDict["width"],
+                       let height = sizeDict["height"] {
+                        size = CGSizeCodable(CGSize(width: width, height: height))
+                    }
+                    
                     return CanvasImageModel(
                         id: id,
-                        imageData: nil, // Data is not stored in Firestore
-                        imageUrl: imageUrl, // Assign the decoded URL
-                        position: CGPointCodable(CGPoint(x: x, y: y))
+                        imageData: nil,
+                        imageUrl: imageUrl,
+                        position: CGPointCodable(CGPoint(x: x, y: y)),
+                        size: size
                     )
                 }
             )
@@ -208,6 +234,7 @@ public struct CanvasTextBoxModel: Codable, Identifiable {
     public var id: UUID
     var text: String
     var position: CGPointCodable
+    var size: CGSizeCodable?
 }
 
 public struct CanvasImageModel: Codable, Identifiable {
@@ -215,6 +242,7 @@ public struct CanvasImageModel: Codable, Identifiable {
     var imageData: Data? // Temporarily hold data before upload
     var imageUrl: String? // Store URL in Firestore
     var position: CGPointCodable
+    var size: CGSizeCodable?
 }
 
 public struct CGPointCodable: Codable {
@@ -222,4 +250,11 @@ public struct CGPointCodable: Codable {
     var y: CGFloat
     init(_ point: CGPoint) { x = point.x; y = point.y }
     var cgPoint: CGPoint { CGPoint(x: x, y: y) }
+}
+
+public struct CGSizeCodable: Codable {
+    var width: CGFloat
+    var height: CGFloat
+    init(_ size: CGSize) { width = size.width; height = size.height }
+    var cgSize: CGSize { CGSize(width: width, height: height) }
 } 

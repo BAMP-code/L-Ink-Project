@@ -8,25 +8,19 @@
 import SwiftUI
 import FirebaseFirestore
 import FirebaseAuth
+import PencilKit
 
 class PublicNotebook: Identifiable, ObservableObject {
     let id = UUID()
     let firestoreId: String
-    @Published var title: String
+    @Published var notebook: Notebook  // Changed from let to @Published var
     @Published var author: String
     @Published var authorImage: String
-    @Published var coverImage: String
-    @Published var description: String
-    @Published var tags: [String]
     @Published var likes: Int
     @Published var comments: [NotebookComment]
-    let timestamp: Date
-    @Published var pages: [Page]  // Use the public Page struct from Models
     @Published var isLiked: Bool = false
     @Published var isSaved: Bool = false
-    @Published var prompts: [String]
-    @Published var isPublic: Bool = false
-    @Published var feedDescription: String = ""  // Add this for the feed post description
+    @Published var feedDescription: String = ""
     
     // Ranking score properties
     @Published var viewCount: Int = 0
@@ -35,22 +29,15 @@ class PublicNotebook: Identifiable, ObservableObject {
     @Published var timeSpentSeconds: Int = 0
     @Published var rankingScore: Double = 0.0
     
-    init(firestoreId: String, title: String, author: String, authorImage: String, coverImage: String, description: String, tags: [String], likes: Int, comments: [NotebookComment], timestamp: Date, pages: [Page], isLiked: Bool, isSaved: Bool, prompts: [String], isPublic: Bool, feedDescription: String, viewCount: Int = 0, saveCount: Int = 0, shareCount: Int = 0, timeSpentSeconds: Int = 0, rankingScore: Double = 0.0) {
+    init(firestoreId: String, notebook: Notebook, author: String, authorImage: String, likes: Int, comments: [NotebookComment], isLiked: Bool, isSaved: Bool, feedDescription: String, viewCount: Int = 0, saveCount: Int = 0, shareCount: Int = 0, timeSpentSeconds: Int = 0, rankingScore: Double = 0.0) {
         self.firestoreId = firestoreId
-        self.title = title
+        self.notebook = notebook
         self.author = author
         self.authorImage = authorImage
-        self.coverImage = coverImage
-        self.description = description
-        self.tags = tags
         self.likes = likes
         self.comments = comments
-        self.timestamp = timestamp
-        self.pages = pages
         self.isLiked = isLiked
         self.isSaved = isSaved
-        self.prompts = prompts
-        self.isPublic = isPublic
         self.feedDescription = feedDescription
         self.viewCount = viewCount
         self.saveCount = saveCount
@@ -72,6 +59,7 @@ class FeedViewModel: ObservableObject {
     @Published var searchText: String = ""
     @Published var userProfileImages: [String: String] = [:] // userId: profileImageURL
     @Published var userNotebooks: [PublicNotebook] = []
+    private let notebookViewModel = NotebookViewModel()
     
     // User interaction history
     private var userInteractionHistory: [String: [Date]] = [:] // notebookId: [interaction timestamps]
@@ -139,7 +127,7 @@ class FeedViewModel: ObservableObject {
         }
     }
     
-    private func fetchNotebooks() {
+    func fetchNotebooks() {
         db.collection("notebooks")
             .whereField("isPublic", isEqualTo: true)
             .addSnapshotListener { [weak self] snapshot, error in
@@ -151,8 +139,21 @@ class FeedViewModel: ObservableObject {
                 self?.notebooks = documents.compactMap { document in
                     let data = document.data()
                     
-                    // Convert Firestore Timestamp to Date
-                    let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
+                    // Create notebook from Firestore data
+                    let notebook = Notebook(
+                        id: document.documentID,
+                        title: data["title"] as? String ?? "",
+                        description: data["description"] as? String,
+                        ownerId: data["ownerId"] as? String ?? "",
+                        isPublic: data["isPublic"] as? Bool ?? false,
+                        isPinned: data["isPinned"] as? Bool ?? false,
+                        isFavorite: data["isFavorite"] as? Bool ?? false,
+                        createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
+                        updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date(),
+                        pages: [], // We'll populate this below
+                        lastViewedPageIndex: data["lastViewedPageIndex"] as? Int ?? 0,
+                        coverImage: data["coverImage"] as? String ?? "Blue"
+                    )
                     
                     // Extract and convert pages array
                     let pagesData = data["pages"] as? [[String: Any]] ?? []
@@ -180,10 +181,20 @@ class FeedViewModel: ObservableObject {
                                   let y = positionDict["y"] else {
                                 return nil
                             }
+                            
+                            // Get size information
+                            var size: CGSizeCodable? = nil
+                            if let sizeDict = boxDict["size"] as? [String: CGFloat],
+                               let width = sizeDict["width"],
+                               let height = sizeDict["height"] {
+                                size = CGSizeCodable(CGSize(width: width, height: height))
+                            }
+                            
                             return CanvasTextBoxModel(
                                 id: id,
                                 text: text,
-                                position: CGPointCodable(CGPoint(x: x, y: y))
+                                position: CGPointCodable(CGPoint(x: x, y: y)),
+                                size: size
                             )
                         }
                         
@@ -196,11 +207,21 @@ class FeedViewModel: ObservableObject {
                                   let y = positionDict["y"] else {
                                 return nil
                             }
+                            
+                            // Get size information
+                            var size: CGSizeCodable? = nil
+                            if let sizeDict = imgDict["size"] as? [String: CGFloat],
+                               let width = sizeDict["width"],
+                               let height = sizeDict["height"] {
+                                size = CGSizeCodable(CGSize(width: width, height: height))
+                            }
+                            
                             return CanvasImageModel(
                                 id: id,
-                                imageData: nil, // Data is not stored in Firestore here
+                                imageData: nil,
                                 imageUrl: imageUrl,
-                                position: CGPointCodable(CGPoint(x: x, y: y))
+                                position: CGPointCodable(CGPoint(x: x, y: y)),
+                                size: size
                             )
                         }
                         
@@ -240,27 +261,23 @@ class FeedViewModel: ObservableObject {
                     
                     let ownerId = data["ownerId"] as? String ?? ""
                     
-                    // Create the PublicNotebook object
-                    var notebook = PublicNotebook(
+                    // Create the PublicNotebook with the notebook we just created
+                    var publicNotebook = PublicNotebook(
                         firestoreId: document.documentID,
-                        title: data["title"] as? String ?? "",
-                        author: ownerId, // Use ownerId initially
+                        notebook: notebook,
+                        author: ownerId,
                         authorImage: self?.userProfileImages[ownerId] ?? "person.circle.fill",
-                        coverImage: data["coverImage"] as? String ?? "Blue",
-                        description: data["description"] as? String ?? "",
-                        tags: [], // Assuming tags are not stored in notebook document
                         likes: likes.count,
                         comments: comments,
-                        timestamp: createdAt,
-                        pages: sortedPages,
                         isLiked: self?.likedNotebooks.contains(document.documentID) ?? false,
-                        isSaved: false, // Initialize as false
-                        prompts: [], // Assuming prompts are not stored in notebook document
-                        isPublic: data["isPublic"] as? Bool ?? false,
+                        isSaved: false,
                         feedDescription: data["feedDescription"] as? String ?? "",
                         viewCount: viewCount,
                         timeSpentSeconds: timeSpentSeconds
                     )
+                    
+                    // Update the notebook's pages
+                    publicNotebook.notebook.pages = sortedPages
                     
                     // Asynchronously fetch the author's name
                     self?.db.collection("users").document(ownerId).getDocument { [weak self] userSnapshot, userError in
@@ -272,17 +289,14 @@ class FeedViewModel: ObservableObject {
                         if let username = userData["username"] as? String {
                             // Update the notebook object in the published array on the main thread
                             DispatchQueue.main.async {
-                                if let index = self.notebooks.firstIndex(where: { $0.firestoreId == notebook.firestoreId }) {
+                                if let index = self.notebooks.firstIndex(where: { $0.firestoreId == publicNotebook.firestoreId }) {
                                     self.notebooks[index].author = username
-                                    // Optionally update authorImage here if needed
                                 }
                             }
-                        } else {
-                            print("❌ 'username' field not found or is not a String for user ID \(ownerId)")
                         }
                     }
                     
-                    return notebook
+                    return publicNotebook
                 }
                 
                 // Calculate ranking scores and sort
@@ -299,7 +313,7 @@ class FeedViewModel: ObservableObject {
             let notebook = notebooks[i]
             
             // Time decay factor (posts get less relevant as they age)
-            let ageInHours = now.timeIntervalSince(notebook.timestamp) / 3600
+            let ageInHours = now.timeIntervalSince(notebook.notebook.createdAt) / 3600
             let timeDecay = 1.0 / (1.0 + log(max(ageInHours, 1)))
             
             // Engagement score
@@ -325,7 +339,7 @@ class FeedViewModel: ObservableObject {
             notebooks[i].rankingScore = finalScore
             
             // Debug logging
-            print("\nRanking components for notebook '\(notebook.title)':")
+            print("\nRanking components for notebook '\(notebook.notebook.title)':")
             print("Time decay (age: \(Int(ageInHours))h): \(String(format: "%.3f", timeDecay))")
             print("Engagement score: \(String(format: "%.3f", engagementScore))")
             print("- Views: \(notebook.viewCount)")
@@ -344,7 +358,7 @@ class FeedViewModel: ObservableObject {
         // Debug log final order
         print("\nFinal notebook order:")
         for notebook in notebooks {
-            print("\(notebook.title): \(String(format: "%.3f", notebook.rankingScore))")
+            print("\(notebook.notebook.title): \(String(format: "%.3f", notebook.rankingScore))")
         }
     }
     
@@ -370,10 +384,6 @@ class FeedViewModel: ObservableObject {
     private func calculateUserRelevanceScore(_ notebook: PublicNotebook) -> Double {
         var score = 0.0
         
-        // Check if user has interacted with similar content
-        let matchingTags = Set(notebook.tags).intersection(userPreferences)
-        score += Double(matchingTags.count) * 0.2
-        
         // Check recency and frequency of interactions with this notebook
         if let interactions = userInteractionHistory[notebook.firestoreId] {
             let now = Date()
@@ -393,14 +403,14 @@ class FeedViewModel: ObservableObject {
         var score = 0.0
         
         // Content length/depth score
-        let pageScore = min(1.0, Double(notebook.pages.count) / 10.0) * 0.4
+        let pageScore = min(1.0, Double(notebook.notebook.pages.count) / 10.0) * 0.4
         
         // Description quality score
-        let descriptionWords = notebook.description.split(separator: " ").count
+        let descriptionWords = notebook.notebook.description?.split(separator: " ").count ?? 0
         let descriptionScore = min(1.0, Double(descriptionWords) / 20.0) * 0.3
         
         // Average content length score
-        let avgContentLength = notebook.pages.reduce(0) { $0 + $1.content.count } / max(1, notebook.pages.count)
+        let avgContentLength = notebook.notebook.pages.reduce(0) { $0 + $1.content.count } / max(1, notebook.notebook.pages.count)
         let contentScore = min(1.0, Double(avgContentLength) / 500.0) * 0.3
         
         score = pageScore + descriptionScore + contentScore
@@ -415,7 +425,7 @@ class FeedViewModel: ObservableObject {
         
         // Update user preferences based on interaction
         if let notebook = notebooks.first(where: { $0.firestoreId == notebookId }) {
-            userPreferences.formUnion(notebook.tags)
+            // Remove tags-related code since Notebook doesn't have tags
             
             // Add interaction to recommendation engine
             let value = normalizeInteractionValue(type: interactionType)
@@ -478,8 +488,8 @@ class FeedViewModel: ObservableObject {
         guard let index = notebooks.firstIndex(where: { $0.firestoreId == notebook.firestoreId }) else { return }
         
         // Update local state
-        notebooks[index].isLiked.toggle()
-        notebooks[index].likes += notebooks[index].isLiked ? 1 : -1
+            notebooks[index].isLiked.toggle()
+            notebooks[index].likes += notebooks[index].isLiked ? 1 : -1
         
         // Update user's likedNotebooks in local cache
         if notebooks[index].isLiked {
@@ -601,8 +611,23 @@ class FeedViewModel: ObservableObject {
                 
                 print("Found \(documents.count) notebooks for user")
                 
-                self.userNotebooks = documents.compactMap { document in
+                // Create a Set to track processed notebook IDs
+                var processedIds = Set<String>()
+                
+                // Clear existing notebooks first
+                self.userNotebooks.removeAll()
+                
+                // Process each document
+                for document in documents {
                     let data = document.data()
+                    let notebookId = document.documentID
+                    
+                    // Skip if we've already processed this notebook
+                    guard !processedIds.contains(notebookId) else {
+                        print("Skipping duplicate notebook: \(data["title"] ?? "Untitled")")
+                        continue
+                    }
+                    
                     print("Processing notebook: \(data["title"] ?? "Untitled")")
                     
                     // Convert Firestore Timestamp to Date
@@ -652,7 +677,7 @@ class FeedViewModel: ObservableObject {
                             }
                             return CanvasImageModel(
                                 id: id,
-                                imageData: nil, // Data is not stored in Firestore here
+                                imageData: nil,
                                 imageUrl: imageUrl,
                                 position: CGPointCodable(CGPoint(x: x, y: y))
                             )
@@ -675,26 +700,36 @@ class FeedViewModel: ObservableObject {
                     let sortedPages = pages.sorted { $0.order < $1.order }
                     
                     let notebook = PublicNotebook(
-                        firestoreId: document.documentID,
-                        title: data["title"] as? String ?? "",
+                        firestoreId: notebookId,
+                        notebook: Notebook(
+                            id: notebookId,
+                            title: data["title"] as? String ?? "",
+                            description: data["description"] as? String,
+                            ownerId: self.currentUserId,
+                            isPublic: data["isPublic"] as? Bool ?? false,
+                            isPinned: data["isPinned"] as? Bool ?? false,
+                            isFavorite: data["isFavorite"] as? Bool ?? false,
+                            createdAt: createdAt,
+                            updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date(),
+                            pages: sortedPages,
+                            lastViewedPageIndex: data["lastViewedPageIndex"] as? Int ?? 0,
+                            coverImage: data["coverImage"] as? String ?? "Blue"
+                        ),
                         author: self.currentUserId,
                         authorImage: self.userProfileImages[self.currentUserId] ?? "person.circle.fill",
-                        coverImage: data["coverImage"] as? String ?? "Blue",
-                        description: data["description"] as? String ?? "",
-                        tags: [],
                         likes: 0,
                         comments: [],
-                        timestamp: createdAt,
-                        pages: sortedPages,
                         isLiked: false,
                         isSaved: false,
-                        prompts: [],
-                        isPublic: data["isPublic"] as? Bool ?? false,
                         feedDescription: data["feedDescription"] as? String ?? ""
                     )
                     
-                    print("Created notebook object: \(notebook.title)")
-                    return notebook
+                    // Add to processed IDs
+                    processedIds.insert(notebookId)
+                    
+                    // Add to userNotebooks array
+                    self.userNotebooks.append(notebook)
+                    print("Added notebook: \(notebook.notebook.title)")
                 }
                 
                 print("Final userNotebooks count: \(self.userNotebooks.count)")
@@ -751,29 +786,29 @@ struct NotebookFeedView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(viewModel.notebooks) { notebook in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(viewModel.notebooks) { notebook in
                             PublicNotebookView(notebook: notebook, viewModel: viewModel, selectedNotebook: $selectedNotebook)
-                                .padding(.bottom, 8)
-                        }
+                            .padding(.bottom, 8)
                     }
+                }
                     .blur(radius: selectedNotebook != nil ? 10 : 0)
+            }
+            .refreshable {
+                await refreshData()
+            }
+            .navigationTitle("Explore")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Image("Logo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 30, height: 30)
+                        .clipShape(Circle())
                 }
-                .refreshable {
-                    await refreshData()
-                }
-                .navigationTitle("Explore")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Image("Logo")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 30, height: 30)
-                            .clipShape(Circle())
-                    }
-                    ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                         Button(action: {
                             showingShareSheet = true
                         }) {
@@ -802,7 +837,7 @@ struct NotebookFeedView: View {
                     VStack(spacing: 0) {
                         // Page selector header
                         HStack {
-                            Text("Page \(selectedPageIndex + 1) of \(selectedNotebook.pages.count + 1)")
+                            Text("Page \(selectedPageIndex + 1) of \(selectedNotebook.notebook.pages.count + 1)")
                                 .font(.headline)
                             Spacer()
                             Button(action: {
@@ -825,7 +860,7 @@ struct NotebookFeedView: View {
                             // Cover Page (Index 0)
                             if selectedPageIndex == 0 {
                                 VStack {
-                                    Image(selectedNotebook.coverImage)
+                                    Image(selectedNotebook.notebook.coverImage)
                                         .resizable()
                                         .aspectRatio(4/5, contentMode: .fit)
                                 }
@@ -841,14 +876,14 @@ struct NotebookFeedView: View {
                             }
                             
                             // Content Pages (Index 1 onwards)
-                            if selectedPageIndex > 0 && selectedPageIndex - 1 < selectedNotebook.pages.count {
+                            if selectedPageIndex > 0 && selectedPageIndex - 1 < selectedNotebook.notebook.pages.count {
                                 FeedPageView(
-                                    page: selectedNotebook.pages[selectedPageIndex - 1],
+                                    page: selectedNotebook.notebook.pages[selectedPageIndex - 1],
                                     rotation: rotation
                                 )
                             }
                         }
-                        .frame(height: 500)
+                        .frame(width: 360, height: 400)
                         .gesture(
                             DragGesture()
                                 .onChanged { value in
@@ -857,9 +892,7 @@ struct NotebookFeedView: View {
                                     }
                                 }
                                 .onEnded { value in
-                                    // Add 1 to account for cover page
-                                    if value.translation.width < -100 && selectedPageIndex < selectedNotebook.pages.count {
-                                        // Swipe left -> go forward
+                                    if value.translation.width < -100 && selectedPageIndex < selectedNotebook.notebook.pages.count {
                                         withAnimation(.easeInOut(duration: 0.5)) {
                                             rotation = 180
                                             isFlipping = true
@@ -870,7 +903,6 @@ struct NotebookFeedView: View {
                                             isFlipping = false
                                         }
                                     } else if value.translation.width > 100 && selectedPageIndex > 0 {
-                                        // Swipe right -> go backward
                                         withAnimation(.easeInOut(duration: 0.5)) {
                                             rotation = -180
                                             isFlipping = true
@@ -913,7 +945,7 @@ struct NotebookFeedView: View {
                             Spacer()
                             
                             Button(action: {
-                                if selectedPageIndex < selectedNotebook.pages.count {
+                                if selectedPageIndex < selectedNotebook.notebook.pages.count {
                                     // Right arrow: go forward
                                     withAnimation(.easeInOut(duration: 0.5)) {
                                         rotation = -180
@@ -928,9 +960,9 @@ struct NotebookFeedView: View {
                             }) {
                                 Image(systemName: "chevron.right.circle.fill")
                                     .font(.title)
-                                    .foregroundColor(selectedPageIndex < selectedNotebook.pages.count ? .blue : .gray)
+                                    .foregroundColor(selectedPageIndex < selectedNotebook.notebook.pages.count ? .blue : .gray)
                             }
-                            .disabled(selectedPageIndex == selectedNotebook.pages.count)
+                            .disabled(selectedPageIndex == selectedNotebook.notebook.pages.count)
                         }
                         .padding()
                         .background(Color(.systemBackground))
@@ -947,8 +979,7 @@ struct NotebookFeedView: View {
     
     private func refreshData() async {
         isRefreshing = true
-        viewModel.loadMockData()
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        await viewModel.fetchNotebooks()
         isRefreshing = false
     }
 }
@@ -985,19 +1016,19 @@ struct ShareNotebookView: View {
                                 showingDescriptionSheet = true
                             }) {
                                 HStack {
-                                    Image(notebook.coverImage)
+                                    Image(notebook.notebook.coverImage)
                                         .resizable()
                                         .aspectRatio(4/5, contentMode: .fit)
                                         .frame(width: 60, height: 75)
                                         .cornerRadius(8)
                                     
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(notebook.title)
+                                        Text(notebook.notebook.title)
                                             .font(.headline)
-                                        Text("\(notebook.pages.count) pages")
+                                        Text("\(notebook.notebook.pages.count) pages")
                                             .font(.subheadline)
                                             .foregroundColor(.gray)
-                                        if notebook.isPublic {
+                                        if notebook.notebook.isPublic {
                                             Text("Currently shared")
                                                 .font(.caption)
                                                 .foregroundColor(.green)
@@ -1006,7 +1037,7 @@ struct ShareNotebookView: View {
                                     
                                     Spacer()
                                     
-                                    if notebook.isPublic {
+                                    if notebook.notebook.isPublic {
                                         Image(systemName: "checkmark.circle.fill")
                                             .foregroundColor(.green)
                                     }
@@ -1056,16 +1087,16 @@ struct DescriptionInputView: View {
             VStack(spacing: 20) {
                 // Notebook preview
                 VStack(alignment: .leading, spacing: 12) {
-                    Image(notebook.coverImage)
+                    Image(notebook.notebook.coverImage)
                         .resizable()
                         .aspectRatio(4/5, contentMode: .fit)
                         .frame(height: 200)
                         .cornerRadius(12)
                     
-                    Text(notebook.title)
+                    Text(notebook.notebook.title)
                         .font(.headline)
                     
-                    Text("\(notebook.pages.count) pages")
+                    Text("\(notebook.notebook.pages.count) pages")
                         .font(.subheadline)
                         .foregroundColor(.gray)
                 }
@@ -1133,7 +1164,7 @@ struct PublicNotebookDetailView: View {
             // Page selector header
             HStack {
                 // Add 1 to account for cover page
-                Text("Page \(selectedPageIndex + 1) of \(notebook.pages.count + 1)")
+                Text("Page \(selectedPageIndex + 1) of \(notebook.notebook.pages.count + 1)")
                     .font(.headline)
                 Spacer()
             }
@@ -1144,13 +1175,13 @@ struct PublicNotebookDetailView: View {
                 // Cover Page (Index 0)
                 if selectedPageIndex == 0 {
                     VStack {
-                        Text(notebook.title)
+                        Text(notebook.notebook.title)
                             .font(.title2)
                             .fontWeight(.bold)
                             .multilineTextAlignment(.center)
                             .padding()
                         
-                        Image(notebook.coverImage)
+                        Image(notebook.notebook.coverImage)
                             .resizable()
                             .aspectRatio(4/5, contentMode: .fit)
                         .rotation3DEffect(
@@ -1166,9 +1197,9 @@ struct PublicNotebookDetailView: View {
                 }
 
                 // Content Pages (Index 1 onwards)
-                if selectedPageIndex > 0 && selectedPageIndex - 1 < notebook.pages.count {
+                if selectedPageIndex > 0 && selectedPageIndex - 1 < notebook.notebook.pages.count {
                     FeedPageView(
-                        page: notebook.pages[selectedPageIndex - 1],
+                        page: notebook.notebook.pages[selectedPageIndex - 1],
                         rotation: rotation
                     )
                 }
@@ -1183,7 +1214,7 @@ struct PublicNotebookDetailView: View {
                     }
                     .onEnded { value in
                         // Add 1 to account for cover page
-                        if value.translation.width < -100 && selectedPageIndex < notebook.pages.count {
+                        if value.translation.width < -100 && selectedPageIndex < notebook.notebook.pages.count {
                             withAnimation(.easeInOut(duration: 0.5)) {
                                 rotation = -180
                                 isFlipping = true
@@ -1236,7 +1267,7 @@ struct PublicNotebookDetailView: View {
 
                 Button(action: {
                     // Add 1 to account for cover page
-                    if selectedPageIndex < notebook.pages.count {
+                    if selectedPageIndex < notebook.notebook.pages.count {
                         withAnimation(.easeInOut(duration: 0.5)) {
                             rotation = -180
                             isFlipping = true
@@ -1250,13 +1281,13 @@ struct PublicNotebookDetailView: View {
                 }) {
                     Image(systemName: "chevron.right.circle.fill")
                         .font(.title)
-                        .foregroundColor(selectedPageIndex < notebook.pages.count ? .blue : .gray)
+                        .foregroundColor(selectedPageIndex < notebook.notebook.pages.count ? .blue : .gray)
                 }
-                .disabled(selectedPageIndex == notebook.pages.count)
+                .disabled(selectedPageIndex == notebook.notebook.pages.count)
             }
             .padding()
         }
-        .navigationTitle(notebook.title)
+        .navigationTitle(notebook.notebook.title)
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -1276,8 +1307,8 @@ struct PublicNotebookView: View {
                 if let profileImageURL = viewModel.userProfileImages[notebook.author] {
                     AsyncImage(url: URL(string: profileImageURL)) { image in
                         image
-                            .resizable()
-                            .scaledToFill()
+                    .resizable()
+                    .scaledToFill()
                     } placeholder: {
                         Image(systemName: "person.circle.fill")
                             .resizable()
@@ -1293,7 +1324,7 @@ struct PublicNotebookView: View {
                 }
                 
                 VStack(alignment: .leading) {
-                    Text(notebook.title)
+                    Text(notebook.notebook.title)
                         .font(.headline)
                     Text("by \(notebook.author)")
                         .font(.subheadline)
@@ -1309,7 +1340,7 @@ struct PublicNotebookView: View {
             .padding(.horizontal)
             
             // Notebook Cover
-            Image(notebook.coverImage)
+            Image(notebook.notebook.coverImage)
                 .resizable()
                 .aspectRatio(4/5, contentMode: .fit)
                 .frame(maxWidth: .infinity)
@@ -1332,7 +1363,7 @@ struct PublicNotebookView: View {
                     Image(systemName: "message")
                 }
                 
-                ShareLink(item: "Check out this notebook: \(notebook.title) - Link ID: \(notebook.firestoreId)") {
+                ShareLink(item: "Check out this notebook: \(notebook.notebook.title) - Link ID: \(notebook.firestoreId)") {
                     Image(systemName: "square.and.arrow.up")
                 }
                 .onTapGesture {
@@ -1355,33 +1386,21 @@ struct PublicNotebookView: View {
                 .padding(.horizontal)
             
             // Description
-            Text(notebook.description)
+            Text(notebook.notebook.description ?? "")
                 .font(.body)
                 .padding(.horizontal)
-            
-            // Tags
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack {
-                    ForEach(notebook.tags, id: \.self) { tag in
-                        Text("#\(tag)")
-                            .font(.subheadline)
-                            .foregroundColor(.blue)
-                    }
-                }
-                .padding(.horizontal)
-            }
             
             // Notebook Info
             HStack {
                 Image(systemName: "doc.text")
-                Text("\(notebook.pages.count) pages")
+                Text("\(notebook.notebook.pages.count) pages")
                     .font(.subheadline)
                     .foregroundColor(.gray)
             }
             .padding(.horizontal)
             
             // Timestamp
-            Text(notebook.timestamp, formatter: DateFormatter.feedDate)
+            Text(notebook.notebook.createdAt, formatter: DateFormatter.feedDate)
                 .font(.caption)
                 .foregroundColor(.gray)
                 .padding(.horizontal)
@@ -1435,25 +1454,7 @@ struct NotebookCommentsView: View {
                         .padding(.vertical, 4)
                     }
                 }
-                // Prompts
-                if !notebook.prompts.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack {
-                            ForEach(notebook.prompts, id: \.self) { prompt in
-                                Button(action: { newComment = prompt }) {
-                                    Text(prompt)
-                                        .font(.caption)
-                                        .padding(8)
-                                        .background(Color.blue.opacity(0.1))
-                                        .foregroundColor(.blue)
-                                        .cornerRadius(8)
-                                }
-                            }
-                        }
-                        .padding(.horizontal)
-                        .padding(.bottom, 4)
-                    }
-                }
+                
                 HStack {
                     TextField("Add a comment...", text: $newComment)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
@@ -1486,14 +1487,19 @@ struct NotebookCommentsView: View {
     func formattedTimeAgo(from date: Date) -> String {
         let calendar = Calendar.current
         let now = Date()
-        let components = calendar.dateComponents([.minute, .second], from: date, to: now)
+        let components = calendar.dateComponents([.year, .day, .hour, .minute, .second], from: date, to: now)
         
-        if let minute = components.minute, minute > 0 {
+        if let year = components.year, year > 0 {
+            return "\(year)y ago"
+        } else if let day = components.day, day > 0 {
+            return "\(day)d ago"
+        } else if let hour = components.hour, hour > 0 {
+            return "\(hour)h ago"
+        } else if let minute = components.minute, minute > 0 {
             return "\(minute)m ago"
         } else if let second = components.second, second >= 0 {
             return "\(second)s ago"
         }
-        // Should not happen for typical comments, but as a fallback
         return "just now"
     }
 }
@@ -1505,7 +1511,7 @@ extension DateFormatter {
         formatter.dateFormat = "MMM d, yyyy"
         return formatter
     }()
-}
+} 
 
 // Add a helper for getting text size (Might be needed for precise positioning if we don't use .position() directly)
 extension String {
@@ -1522,32 +1528,184 @@ extension String {
     }
 }
 
-// Add a helper view for page content
+// Helper view for page lines
+struct PageLines: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(0..<20) { _ in
+                Rectangle()
+                    .fill(Color.gray.opacity(0.1))
+                    .frame(height: 1)
+                    .padding(.vertical, 14)
+            }
+        }
+        .padding(.horizontal, 30)
+        .padding(.vertical, 20)
+    }
+}
+
+// Helper view for text boxes
+struct PageTextBox: View {
+    let box: CanvasTextBoxModel
+    
+    var body: some View {
+        Text(box.text)
+            .font(.body)
+            .frame(minWidth: 60, maxWidth: 180, minHeight: 32, alignment: .topLeading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(8)
+            .background(Color.clear)
+            .cornerRadius(8)
+            .position(CGPoint(x: box.position.x, y: box.position.y))
+    }
+}
+
+// Helper view for images
+struct PageImage: View {
+    let image: CanvasImageModel
+    
+    var body: some View {
+        if let imageUrl = image.imageUrl,
+           let url = URL(string: imageUrl) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .empty:
+                    ProgressView()
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 100, height: 100)
+                case .failure:
+                    Image(systemName: "photo")
+                        .frame(width: 100, height: 100)
+                @unknown default:
+                    EmptyView()
+                }
+            }
+            .frame(width: 100, height: 100)
+            .position(CGPoint(x: image.position.x, y: image.position.y))
+        }
+    }
+}
+
+// Main page content view
+struct PageContent: View {
+    let page: Page
+    
+    var body: some View {
+        ZStack {
+            // Page background
+            Rectangle()
+                .fill(Color.white.opacity(0.95))
+                .frame(width: 320, height: 400)
+            
+            // Page lines
+            PageLines()
+            
+            // Text content
+            if page.type == .text {
+                Text(page.content)
+                    .font(.body)
+                    .foregroundColor(.black.opacity(0.8))
+                    .padding()
+            }
+            
+            // Text boxes
+            if let textBoxes = page.textBoxes {
+                ForEach(textBoxes) { box in
+                    PageTextBox(box: box)
+                }
+            }
+            
+            // Images
+            if let images = page.images {
+                ForEach(images) { img in
+                    PageImage(image: img)
+                }
+            }
+        }
+    }
+}
+
+// Feed page view with exact positioning
 struct FeedPageView: View {
     let page: Page
     let rotation: Double
     
     var body: some View {
-        VStack {
-//            Text(page.content) // Removed this as content is shown via text boxes
-//                .padding()
-//                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        ZStack {
+            // Background
+            Color.white
             
-            // Render text boxes
-            ForEach(page.textBoxes ?? [], id: \.id) { textBox in
-                Text(textBox.text)
-                    .position(x: textBox.position.x, y: textBox.position.y - 50) // Adjusted Y position further
+            // Content container with exact positioning
+            ZStack {
+                // Text content
+                if page.type == .text {
+                    Text(page.content)
+                        .font(.body)
+                        .foregroundColor(.black)
+                        .padding()
+                }
+                
+                // Text boxes with exact positioning
+                if let textBoxes = page.textBoxes {
+                    ForEach(textBoxes) { box in
+                        Text(box.text)
+                            .font(.body)
+                            .foregroundColor(.black)
+                            .frame(
+                                width: box.size?.width ?? 180,
+                                height: box.size?.height ?? 100,
+                                alignment: .topLeading
+                            )
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(8)
+                            .background(Color.clear)
+                            .cornerRadius(8)
+                            .position(
+                                x: min(max(box.position.x, 50), 270), // Constrain x position
+                                y: min(max(box.position.y, 50), 350)  // Constrain y position
+                            )
+                    }
+                }
+                
+                // Images with exact positioning
+                if let images = page.images {
+                    ForEach(images) { img in
+                        if let imageUrl = img.imageUrl,
+                           let url = URL(string: imageUrl) {
+                            AsyncImage(url: url) { phase in
+                                switch phase {
+                                case .empty:
+                                    ProgressView()
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: img.size?.width ?? 100, height: img.size?.height ?? 100)
+                                case .failure:
+                                    Image(systemName: "photo")
+                                        .frame(width: img.size?.width ?? 100, height: img.size?.height ?? 100)
+                                @unknown default:
+                                    EmptyView()
+                                }
+                            }
+                            .frame(width: img.size?.width ?? 100, height: img.size?.height ?? 100)
+                            .position(
+                                x: min(max(img.position.x, 50), 270), // Constrain x position
+                                y: min(max(img.position.y, 50), 350)  // Constrain y position
+                            )
+                        }
+                    }
+                }
             }
-            
-            // Render images
-            ForEach(page.images ?? [], id: \.id) { image in
-                CanvasImageView(imageModel: image)
-                    .position(x: image.position.x, y: image.position.y - 50) // Adjusted Y position further
-            }
+            .frame(width: 320, height: 400)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(width: 320, height: 400)
         .background(Color.white)
         .cornerRadius(12)
+        .shadow(radius: 2)
         .rotation3DEffect(
             .degrees(rotation),
             axis: (x: 0, y: 1, z: 0),

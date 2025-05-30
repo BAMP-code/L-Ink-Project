@@ -13,6 +13,10 @@ class ProfileImageViewModel: ObservableObject {
     @Published var headerImage: UIImage?
     @Published var profileImage: UIImage?
     @Published var isUploading = false
+    @Published var showingHeaderCropper = false
+    @Published var showingProfileCropper = false
+    @Published var tempHeaderImage: UIImage?
+    @Published var tempProfileImage: UIImage?
     private var authViewModel: AuthViewModel
     private var cancellables = Set<AnyCancellable>()
     
@@ -99,14 +103,24 @@ class ProfileImageViewModel: ObservableObject {
         guard let data = try? await item.loadTransferable(type: Data.self),
               let image = UIImage(data: data) else { return }
         print("Header image selected")
-        headerImage = image
-        await uploadHeaderImage(image)
+        tempHeaderImage = image
+        showingHeaderCropper = true
     }
     
     func handleProfileImageSelection(_ item: PhotosPickerItem) async {
         guard let data = try? await item.loadTransferable(type: Data.self),
               let image = UIImage(data: data) else { return }
         print("📸 Profile image selected")
+        tempProfileImage = image
+        showingProfileCropper = true
+    }
+    
+    func confirmHeaderCrop(_ image: UIImage) async {
+        headerImage = image
+        await uploadHeaderImage(image)
+    }
+    
+    func confirmProfileCrop(_ image: UIImage) async {
         profileImage = image
         await uploadProfileImage(image)
     }
@@ -323,6 +337,7 @@ struct ProfileHeaderSection: View {
 struct ProfileView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @StateObject private var notebookViewModel = NotebookViewModel()
+    @StateObject private var imageViewModel = ProfileImageViewModel(authViewModel: AuthViewModel())
     @State private var showingEditProfile = false
     @State private var showingSettings = false
     @State private var selectedHeaderItem: PhotosPickerItem?
@@ -337,6 +352,24 @@ struct ProfileView: View {
         notebookViewModel.notebooks.filter { $0.isFavorite }
     }
     
+    private func notebookCardView(for notebook: PublicNotebook) -> some View {
+        NavigationLink(destination: PublicNotebookDetailView(notebook: notebook)) {
+            VStack {
+                Image(notebook.notebook.coverImage)
+                    .resizable()
+                    .aspectRatio(4/5, contentMode: .fit)
+                    .frame(width: 100, height: 125)
+                    .cornerRadius(12)
+                Text(notebook.notebook.title)
+                    .font(.caption)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .frame(width: 100)
+            }
+            .padding(4)
+        }
+    }
+    
     var body: some View {
         NavigationView {
             ScrollView {
@@ -344,9 +377,9 @@ struct ProfileView: View {
                     ProfileHeaderSection(
                         selectedHeaderItem: $selectedHeaderItem,
                         selectedProfileItem: $selectedProfileItem,
-                        headerImage: authViewModel.headerImage,
+                        headerImage: imageViewModel.headerImage,
                         headerURL: authViewModel.currentUser?.headerImageURL,
-                        profileImage: authViewModel.profileImage,
+                        profileImage: imageViewModel.profileImage,
                         profileURL: authViewModel.currentUser?.profileImageURL,
                         onHeaderImageSelected: handleHeaderImageSelection,
                         onProfileImageSelected: handleProfileImageSelection
@@ -397,23 +430,23 @@ struct ProfileView: View {
                     // Action Buttons
                     HStack(spacing: 10) {
                         Button(action: { showingEditProfile = true }) {
-                            Text("Edit Profile")
+                                Text("Edit Profile")
                                 .font(.system(size: 14, weight: .semibold))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 8)
-                                .background(Color.gray.opacity(0.1))
+                            .background(Color.gray.opacity(0.1))
                                 .cornerRadius(8)
                         }
                         Button(action: { showingSettings = true }) {
-                            Image(systemName: "gear")
+                                Image(systemName: "gear")
                                 .frame(width: 30)
                                 .padding(.vertical, 8)
-                                .background(Color.gray.opacity(0.1))
+                            .background(Color.gray.opacity(0.1))
                                 .cornerRadius(8)
                         }
                     }
                     .padding(.horizontal)
-                    
+                        
                     // Scrapbook Stats
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Scrapbook Stats")
@@ -438,21 +471,7 @@ struct ProfileView: View {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack {
                                     ForEach(publicNotebooks) { notebook in
-                                        NavigationLink(destination: PublicNotebookDetailView(notebook: notebook)) {
-                                            VStack {
-                                                Image(notebook.coverImage)
-                                                    .resizable()
-                                                    .aspectRatio(4/5, contentMode: .fit)
-                                                    .frame(width: 100, height: 125)
-                                                    .cornerRadius(12)
-                                                Text(notebook.title)
-                                                    .font(.caption)
-                                                    .lineLimit(2)
-                                                    .multilineTextAlignment(.center)
-                                                    .frame(width: 100)
-                                            }
-                                            .padding(4)
-                                        }
+                                        notebookCardView(for: notebook)
                                     }
                                 }
                             }
@@ -469,6 +488,40 @@ struct ProfileView: View {
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
+            }
+            .sheet(isPresented: $imageViewModel.showingHeaderCropper) {
+                if let image = imageViewModel.tempHeaderImage {
+                    ImageCropper(
+                        image: image,
+                        croppedImage: $imageViewModel.tempHeaderImage,
+                        aspectRatio: 2.0,
+                        title: "Crop Header Image"
+                    )
+                    .onDisappear {
+                        if let croppedImage = imageViewModel.tempHeaderImage {
+                            Task {
+                                await imageViewModel.confirmHeaderCrop(croppedImage)
+                            }
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $imageViewModel.showingProfileCropper) {
+                if let image = imageViewModel.tempProfileImage {
+                    ImageCropper(
+                        image: image,
+                        croppedImage: $imageViewModel.tempProfileImage,
+                        aspectRatio: 1.0,
+                        title: "Crop Profile Image"
+                    )
+                    .onDisappear {
+                        if let croppedImage = imageViewModel.tempProfileImage {
+                            Task {
+                                await imageViewModel.confirmProfileCrop(croppedImage)
+                            }
+                        }
+                    }
+                }
             }
             .overlay {
                 if isUploading {
@@ -516,111 +569,124 @@ struct ProfileView: View {
         guard let userId = authViewModel.currentUser?.id else { return }
         
         let db = Firestore.firestore()
-        db.collection("notebooks")
+        let query = db.collection("notebooks")
             .whereField("ownerId", isEqualTo: userId)
             .whereField("isPublic", isEqualTo: true)
-            .getDocuments { snapshot, error in
-                if let error = error {
-                    print("Error fetching public notebooks: \(error.localizedDescription)")
-                    return
-                }
+        
+        query.getDocuments(source: .default) { snapshot, error in
+            if let error = error {
+                print("Error fetching public notebooks: \(error.localizedDescription)")
+                return
+            }
+            
+            let notebooks = snapshot?.documents.compactMap { document -> PublicNotebook? in
+                let data = document.data()
                 
-                let notebooks = snapshot?.documents.compactMap { document -> PublicNotebook? in
-                    let data = document.data()
+                // Create base notebook
+                let notebook = Notebook(
+                    id: document.documentID,
+                    title: data["title"] as? String ?? "",
+                    description: data["description"] as? String,
+                    ownerId: userId,
+                    isPublic: data["isPublic"] as? Bool ?? false,
+                    isPinned: data["isPinned"] as? Bool ?? false,
+                    isFavorite: data["isFavorite"] as? Bool ?? false,
+                    createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
+                    updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date(),
+                    pages: [], // We'll populate this below
+                    lastViewedPageIndex: data["lastViewedPageIndex"] as? Int ?? 0,
+                    coverImage: data["coverImage"] as? String ?? "Blue"
+                )
+                
+                // Extract and convert pages array
+                let pagesData = data["pages"] as? [[String: Any]] ?? []
+                let pages = pagesData.compactMap { pageData -> Page? in
+                    guard let id = pageData["id"] as? String,
+                          let content = pageData["content"] as? String,
+                          let typeString = pageData["type"] as? String,
+                          let type = PageType(rawValue: typeString),
+                          let order = pageData["order"] as? Int,
+                          let createdAt = (pageData["createdAt"] as? Timestamp)?.dateValue(),
+                          let updatedAt = (pageData["updatedAt"] as? Timestamp)?.dateValue()
+                    else {
+                        return nil
+                    }
                     
-                    // Convert Firestore Timestamp to Date
-                    let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
+                    // Decode canvas elements
+                    let drawingData = pageData["drawingData"] as? Data
                     
-                    // Extract and convert pages array
-                    let pagesData = data["pages"] as? [[String: Any]] ?? []
-                    let pages = pagesData.compactMap { pageData -> Page? in
-                        guard let id = pageData["id"] as? String,
-                              let content = pageData["content"] as? String,
-                              let typeString = pageData["type"] as? String,
-                              let type = PageType(rawValue: typeString),
-                              let order = pageData["order"] as? Int,
-                              let createdAt = (pageData["createdAt"] as? Timestamp)?.dateValue(),
-                              let updatedAt = (pageData["updatedAt"] as? Timestamp)?.dateValue()
-                        else {
+                    let textBoxes = (pageData["textBoxes"] as? [[String: Any]])?.compactMap { boxDict -> CanvasTextBoxModel? in
+                        guard let idString = boxDict["id"] as? String,
+                              let id = UUID(uuidString: idString),
+                              let text = boxDict["text"] as? String,
+                              let positionDict = boxDict["position"] as? [String: CGFloat],
+                              let x = positionDict["x"],
+                              let y = positionDict["y"] else {
                             return nil
                         }
-                        
-                        // Decode canvas elements
-                        let drawingData = pageData["drawingData"] as? Data
-                        
-                        let textBoxes = (pageData["textBoxes"] as? [[String: Any]])?.compactMap { boxDict -> CanvasTextBoxModel? in
-                            guard let idString = boxDict["id"] as? String,
-                                  let id = UUID(uuidString: idString),
-                                  let text = boxDict["text"] as? String,
-                                  let positionDict = boxDict["position"] as? [String: CGFloat],
-                                  let x = positionDict["x"],
-                                  let y = positionDict["y"] else {
-                                return nil
-                            }
-                            return CanvasTextBoxModel(
-                                id: id,
-                                text: text,
-                                position: CGPointCodable(CGPoint(x: x, y: y))
-                            )
-                        }
-                        
-                        let images = (pageData["images"] as? [[String: Any]])?.compactMap { imgDict -> CanvasImageModel? in
-                            guard let idString = imgDict["id"] as? String,
-                                  let id = UUID(uuidString: idString),
-                                  let imageUrl = imgDict["imageUrl"] as? String,
-                                  let positionDict = imgDict["position"] as? [String: CGFloat],
-                                  let x = positionDict["x"],
-                                  let y = positionDict["y"] else {
-                                return nil
-                            }
-                            return CanvasImageModel(
-                                id: id,
-                                imageData: nil, // Data is not stored in Firestore here
-                                imageUrl: imageUrl,
-                                position: CGPointCodable(CGPoint(x: x, y: y))
-                            )
-                        }
-                        
-                        return Page(
+                        return CanvasTextBoxModel(
                             id: id,
-                            content: content,
-                            type: type,
-                            createdAt: createdAt,
-                            updatedAt: updatedAt,
-                            order: order,
-                            drawingData: drawingData,
-                            textBoxes: textBoxes,
-                            images: images
+                            text: text,
+                            position: CGPointCodable(CGPoint(x: x, y: y))
                         )
                     }
                     
-                    // Sort pages by order
-                    let sortedPages = pages.sorted { $0.order < $1.order }
+                    let images = (pageData["images"] as? [[String: Any]])?.compactMap { imgDict -> CanvasImageModel? in
+                        guard let idString = imgDict["id"] as? String,
+                              let id = UUID(uuidString: idString),
+                              let imageUrl = imgDict["imageUrl"] as? String,
+                              let positionDict = imgDict["position"] as? [String: CGFloat],
+                              let x = positionDict["x"],
+                              let y = positionDict["y"] else {
+                            return nil
+                        }
+                        return CanvasImageModel(
+                            id: id,
+                            imageData: nil,
+                            imageUrl: imageUrl,
+                            position: CGPointCodable(CGPoint(x: x, y: y))
+                        )
+                    }
                     
-                    return PublicNotebook(
-                        firestoreId: document.documentID,
-                        title: data["title"] as? String ?? "",
-                        author: userId,
-                        authorImage: authViewModel.currentUser?.profileImageURL ?? "person.circle.fill",
-                        coverImage: data["coverImage"] as? String ?? "Logo",
-                        description: data["description"] as? String ?? "",
-                        tags: [],
-                        likes: 0,
-                        comments: [],
-                        timestamp: createdAt,
-                        pages: sortedPages,
-                        isLiked: false,
-                        isSaved: false,
-                        prompts: [],
-                        isPublic: true,
-                        feedDescription: data["feedDescription"] as? String ?? ""
+                    return Page(
+                        id: id,
+                        content: content,
+                        type: type,
+                        createdAt: createdAt,
+                        updatedAt: updatedAt,
+                        order: order,
+                        drawingData: drawingData,
+                        textBoxes: textBoxes,
+                        images: images
                     )
-                } ?? []
-                
-                DispatchQueue.main.async {
-                    self.publicNotebooks = notebooks
                 }
+                
+                // Sort pages by order
+                let sortedPages = pages.sorted { $0.order < $1.order }
+                
+                // Create PublicNotebook
+                let publicNotebook = PublicNotebook(
+                    firestoreId: document.documentID,
+                    notebook: notebook,
+                    author: userId,
+                    authorImage: "person.circle.fill",
+                    likes: (data["likes"] as? [String])?.count ?? 0,
+                    comments: [],
+                    isLiked: false,
+                    isSaved: false,
+                    feedDescription: data["feedDescription"] as? String ?? ""
+                )
+                
+                // Update the notebook's pages
+                publicNotebook.notebook.pages = sortedPages
+                
+                return publicNotebook
             }
+            
+            DispatchQueue.main.async {
+                self.publicNotebooks = notebooks ?? []
+            }
+        }
     }
     
     private func saveBio() {
@@ -642,68 +708,16 @@ struct ProfileView: View {
         guard let data = try? await item.loadTransferable(type: Data.self),
               let image = UIImage(data: data) else { return }
         print("Header image selected")
-        isUploading = true
-        await uploadHeaderImage(image)
-        isUploading = false
+        imageViewModel.tempHeaderImage = image
+        imageViewModel.showingHeaderCropper = true
     }
     
     private func handleProfileImageSelection(_ item: PhotosPickerItem) async {
         guard let data = try? await item.loadTransferable(type: Data.self),
               let image = UIImage(data: data) else { return }
         print("📸 Profile image selected")
-        isUploading = true
-        await uploadProfileImage(image)
-        isUploading = false
-    }
-    
-    private func uploadHeaderImage(_ image: UIImage) async {
-        guard let userId = authViewModel.currentUser?.id else { 
-            print("Error: No user ID found")
-            return 
-        }
-        print("📸 Starting header image upload for user: \(userId)")
-        
-        do {
-            let path = "users/\(userId)/header.jpg"
-            print("📤 Uploading header image to path: \(path)")
-            let imageURL = try await StorageService.shared.uploadImage(image, path: path)
-            print("✅ Header image uploaded successfully. URL: \(imageURL)")
-            
-            var updatedUser = authViewModel.currentUser
-            updatedUser?.headerImageURL = imageURL
-            updatedUser?.updatedAt = Date()
-            if let user = updatedUser {
-                try await authViewModel.updateUser(user)
-                print("✅ User updated successfully with header image")
-            }
-        } catch {
-            print("❌ Error uploading header image: \(error)")
-        }
-    }
-    
-    private func uploadProfileImage(_ image: UIImage) async {
-        guard let userId = authViewModel.currentUser?.id else { 
-            print("❌ Error: No user ID found")
-            return 
-        }
-        print("📸 Starting profile image upload for user: \(userId)")
-        
-        do {
-            let path = "users/\(userId)/profile.jpg"
-            print("📤 Uploading profile image to path: \(path)")
-            let imageURL = try await StorageService.shared.uploadImage(image, path: path)
-            print("✅ Profile image uploaded successfully. URL: \(imageURL)")
-            
-            var updatedUser = authViewModel.currentUser
-            updatedUser?.profileImageURL = imageURL
-            updatedUser?.updatedAt = Date()
-            if let user = updatedUser {
-                try await authViewModel.updateUser(user)
-                print("✅ User updated successfully with profile image")
-            }
-        } catch {
-            print("❌ Error uploading profile image: \(error)")
-        }
+        imageViewModel.tempProfileImage = image
+        imageViewModel.showingProfileCropper = true
     }
 }
 
@@ -836,3 +850,94 @@ struct SettingsView: View {
         }
     }
 }
+
+// Add ImageCropper view
+struct ImageCropper: View {
+    let image: UIImage
+    @Binding var croppedImage: UIImage?
+    @Environment(\.dismiss) var dismiss
+    @State private var scale: CGFloat = 1.0
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
+    let aspectRatio: CGFloat
+    let title: String
+    
+    var body: some View {
+        NavigationView {
+            GeometryReader { geometry in
+                VStack {
+                    Text(title)
+                        .font(.headline)
+                        .padding()
+                    
+                    ZStack {
+                        Color.black
+                        
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .scaleEffect(scale)
+                            .offset(offset)
+                            .gesture(
+                                DragGesture()
+                                    .onChanged { value in
+                                        offset = CGSize(
+                                            width: lastOffset.width + value.translation.width,
+                                            height: lastOffset.height + value.translation.height
+                                        )
+                                    }
+                                    .onEnded { _ in
+                                        lastOffset = offset
+                                    }
+                            )
+                            .gesture(
+                                MagnificationGesture()
+                                    .onChanged { value in
+                                        scale = value
+                                    }
+                            )
+                        
+                        // Overlay to show crop area
+                        Rectangle()
+                            .stroke(Color.white, lineWidth: 2)
+                            .frame(
+                                width: geometry.size.width,
+                                height: geometry.size.width / aspectRatio
+                            )
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                }
+            }
+            .navigationBarItems(
+                leading: Button("Cancel") {
+                    dismiss()
+                },
+                trailing: Button("Done") {
+                    cropImage()
+                }
+            )
+        }
+    }
+    
+    private func cropImage() {
+        // Create a new image context with the desired size
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1000, height: 1000 / aspectRatio))
+        
+        let newCroppedImage = renderer.image { context in
+            // Calculate the crop rect based on the current scale and offset
+            let cropRect = CGRect(
+                x: -offset.width / scale,
+                y: -offset.height / scale,
+                width: 1000 / scale,
+                height: (1000 / aspectRatio) / scale
+            )
+            
+            // Draw the cropped portion of the image
+            image.draw(in: cropRect)
+        }
+        
+        croppedImage = newCroppedImage
+        dismiss()
+    }
+} 

@@ -17,6 +17,143 @@ class NotebookViewModel: ObservableObject {
     
     // MARK: - Notebook Operations
     
+    func getNotebook(id: String) async throws -> Notebook? {
+        print("🔍 Attempting to fetch notebook with ID: \(id)")
+        
+        // First check if we have it in our local cache
+        if let notebook = notebooks.first(where: { $0.id == id }) {
+            print("✅ Found notebook in local cache")
+            return notebook
+        }
+        
+        print("📥 Notebook not in cache, fetching from Firestore...")
+        
+        let document = try await db.collection("notebooks").document(id).getDocument()
+        
+        guard document.exists else {
+            print("❌ Document does not exist in Firestore")
+            return nil
+        }
+        
+        guard let data = document.data() else {
+            print("❌ Document exists but has no data")
+            return nil
+        }
+        
+        print("📄 Found document in Firestore with data: \(data)")
+        
+        // Create notebook from dictionary
+        let notebook = Notebook(
+            id: document.documentID,
+            title: data["title"] as? String ?? "",
+            description: data["description"] as? String,
+            ownerId: data["ownerId"] as? String ?? "",
+            isPublic: data["isPublic"] as? Bool ?? false,
+            isPinned: data["isPinned"] as? Bool ?? false,
+            isFavorite: data["isFavorite"] as? Bool ?? false,
+            createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
+            updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date(),
+            pages: [], // We'll populate this below
+            lastViewedPageIndex: data["lastViewedPageIndex"] as? Int ?? 0,
+            coverImage: data["coverImage"] as? String ?? "Blue"
+        )
+        
+        // Extract and convert pages array
+        let pagesData = data["pages"] as? [[String: Any]] ?? []
+        print("📚 Found \(pagesData.count) pages in notebook")
+        
+        let pages = pagesData.compactMap { pageData -> Page? in
+            guard let id = pageData["id"] as? String,
+                  let content = pageData["content"] as? String,
+                  let typeString = pageData["type"] as? String,
+                  let type = PageType(rawValue: typeString),
+                  let order = pageData["order"] as? Int,
+                  let createdAt = (pageData["createdAt"] as? Timestamp)?.dateValue(),
+                  let updatedAt = (pageData["updatedAt"] as? Timestamp)?.dateValue()
+            else {
+                print("❌ Failed to parse page data: \(pageData)")
+                return nil
+            }
+            
+            // Decode canvas elements
+            let drawingData = pageData["drawingData"] as? Data
+            
+            let textBoxes = (pageData["textBoxes"] as? [[String: Any]])?.compactMap { boxDict -> CanvasTextBoxModel? in
+                guard let idString = boxDict["id"] as? String,
+                      let id = UUID(uuidString: idString),
+                      let text = boxDict["text"] as? String,
+                      let positionDict = boxDict["position"] as? [String: CGFloat],
+                      let x = positionDict["x"],
+                      let y = positionDict["y"] else {
+                    print("❌ Failed to parse text box data: \(boxDict)")
+                    return nil
+                }
+                
+                // Get size information
+                var size: CGSizeCodable? = nil
+                if let sizeDict = boxDict["size"] as? [String: CGFloat],
+                   let width = sizeDict["width"],
+                   let height = sizeDict["height"] {
+                    size = CGSizeCodable(CGSize(width: width, height: height))
+                }
+                
+                return CanvasTextBoxModel(
+                    id: id,
+                    text: text,
+                    position: CGPointCodable(CGPoint(x: x, y: y)),
+                    size: size
+                )
+            }
+            
+            let images = (pageData["images"] as? [[String: Any]])?.compactMap { imgDict -> CanvasImageModel? in
+                guard let idString = imgDict["id"] as? String,
+                      let id = UUID(uuidString: idString),
+                      let imageUrl = imgDict["imageUrl"] as? String,
+                      let positionDict = imgDict["position"] as? [String: CGFloat],
+                      let x = positionDict["x"],
+                      let y = positionDict["y"] else {
+                    print("❌ Failed to parse image data: \(imgDict)")
+                    return nil
+                }
+                
+                // Get size information
+                var size: CGSizeCodable? = nil
+                if let sizeDict = imgDict["size"] as? [String: CGFloat],
+                   let width = sizeDict["width"],
+                   let height = sizeDict["height"] {
+                    size = CGSizeCodable(CGSize(width: width, height: height))
+                }
+                
+                return CanvasImageModel(
+                    id: id,
+                    imageData: nil,
+                    imageUrl: imageUrl,
+                    position: CGPointCodable(CGPoint(x: x, y: y)),
+                    size: size
+                )
+            }
+            
+            return Page(
+                id: id,
+                content: content,
+                type: type,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                order: order,
+                drawingData: drawingData,
+                textBoxes: textBoxes,
+                images: images
+            )
+        }
+        
+        // Sort pages by order and update the notebook
+        var finalNotebook = notebook
+        finalNotebook.pages = pages.sorted { $0.order < $1.order }
+        print("✅ Successfully created notebook with \(pages.count) pages")
+        
+        return finalNotebook
+    }
+    
     func fetchNotebooks() {
         guard !currentUserid.isEmpty else {
             print("Current user ID is empty. Cannot fetch notebooks.")
@@ -33,7 +170,6 @@ class NotebookViewModel: ObservableObject {
                     // If no documents and no error, it means no notebooks for this user
                     if error == nil {
                         self?.notebooks = [] // Clear notebooks if none found for user
-                        self?.createDefaultNotebook() // Create default if none exist
                     }
                     return
                 }
@@ -44,11 +180,6 @@ class NotebookViewModel: ObservableObject {
                 
                 // Reset pinned status for all notebooks
                 self?.resetPinnedStatus()
-                
-                // If no notebooks exist for the current user after fetching, create a default one
-                if self?.notebooks.isEmpty == true {
-                    self?.createDefaultNotebook()
-                }
             }
     }
     

@@ -193,7 +193,7 @@ struct NotebookSpaceView: View {
                         .padding(.vertical, 4)
                     
                     // Content Section
-                    if filteredNotebooks.isEmpty {
+                    if filteredNotebooks.isEmpty && selectedSection != 0 {
                         Spacer()
                         EmptyStateView(section: selectedSection)
                         Spacer()

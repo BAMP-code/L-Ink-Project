@@ -8,25 +8,25 @@ struct SignInView: View {
     @State private var isPasswordVisible = false
     
     var body: some View {
-        VStack(spacing: 20) {
+                    VStack(spacing: 20) {
             // Logo
-            Image("Logo")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 120, height: 120)
+                        Image("Logo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 120, height: 120)
                 .padding(.top, 50)
-            
+                        
             Text("Welcome to L'Ink")
                 .font(.title)
-                .fontWeight(.bold)
-            
+                            .fontWeight(.bold)
+                        
             // Sign In Form
-            VStack(spacing: 15) {
-                TextField("Email", text: $email)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                        VStack(spacing: 15) {
+                            TextField("Email", text: $email)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
                     .textContentType(.emailAddress)
-                    .autocapitalization(.none)
-                    .keyboardType(.emailAddress)
+                                .autocapitalization(.none)
+                                .keyboardType(.emailAddress)
                 
                 ZStack(alignment: .trailing) {
                     if isPasswordVisible {
@@ -34,8 +34,8 @@ struct SignInView: View {
                             .textFieldStyle(RoundedBorderTextFieldStyle())
                             .textContentType(.password)
                     } else {
-                        SecureField("Password", text: $password)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            SecureField("Password", text: $password)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
                             .textContentType(.password)
                     }
                     
@@ -52,30 +52,30 @@ struct SignInView: View {
             Button(action: {
                 authViewModel.signIn(email: email, password: password)
             }) {
-                Text("Sign In")
+                                    Text("Sign In")
                     .fontWeight(.semibold)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
                     .foregroundColor(.white)
-                    .cornerRadius(10)
+                            .cornerRadius(10)
             }
             .padding(.horizontal)
-            
+                            
             // Sign Up Link
             Button(action: { showingSignUp = true }) {
                 Text("Don't have an account? Sign Up")
-                    .foregroundColor(.blue)
-            }
+                                    .foregroundColor(.blue)
+                            }
             
             Spacer()
-        }
-        .padding()
+                    }
+                    .padding()
         .sheet(isPresented: $showingSignUp) {
             SignUpView()
+                }
+            }
         }
-    }
-}
 
 struct SignInView_Previews: PreviewProvider {
     static var previews: some View {

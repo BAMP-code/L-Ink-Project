@@ -140,6 +140,7 @@ class AuthViewModel: ObservableObject {
         } catch {
             self.errorMessage = "Sign out failed: \(error.localizedDescription)"
         }
+
     }
     
     func updateUser(_ user: AppUser) async throws {

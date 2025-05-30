@@ -7,20 +7,20 @@ struct ContentView: View {
     
     var body: some View {
         NavigationStack {
-            Group {
-                if appConfig.isInitialized {
-                    if authViewModel.isAuthenticated {
-                        MainTabView()
-                            .environmentObject(appViewModel)
-                    } else {
-                        SignInView()
-                    }
+        Group {
+            if appConfig.isInitialized {
+                if authViewModel.isAuthenticated {
+                    MainTabView()
+                        .environmentObject(appViewModel)
                 } else {
-                    ProgressView()
-                        .onAppear {
-                            appConfig.initialize()
-                        }
+                    SignInView()
                 }
+            } else {
+                ProgressView()
+                    .onAppear {
+                        appConfig.initialize()
+                        }
+                    }
             }
         }
     }

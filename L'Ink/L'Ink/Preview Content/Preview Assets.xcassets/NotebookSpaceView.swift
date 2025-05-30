@@ -74,8 +74,8 @@ struct NotebookCard: View {
                 Spacer()
                 if let description = notebook.description {
                     Text(description)
-                        .font(.caption)
-                        .foregroundColor(.gray)
+                    .font(.caption)
+                    .foregroundColor(.gray)
                         .lineLimit(1)
                 }
             }

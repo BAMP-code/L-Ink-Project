@@ -59,9 +59,9 @@ struct SignUpView: View {
                                         .textFieldStyle(RoundedBorderTextFieldStyle())
                                         .submitLabel(.done)
                                 } else {
-                                    SecureField("Password", text: $password)
-                                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                                        .submitLabel(.done)
+                            SecureField("Password", text: $password)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .submitLabel(.done)
                                 }
                                 
                                 Button(action: { isPasswordVisible.toggle() }) {
@@ -126,7 +126,7 @@ struct SignUpView: View {
                 isSigningUp = false
             } catch {
                 alertMessage = error.localizedDescription
-                showingAlert = true
+            showingAlert = true
             }
         }
     }

@@ -979,7 +979,8 @@ struct NotebookFeedView: View {
     
     private func refreshData() async {
         isRefreshing = true
-        await viewModel.fetchNotebooks()
+        viewModel.fetchNotebooks()
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // Add a small delay for better UX
         isRefreshing = false
     }
 }

@@ -794,6 +794,7 @@ struct SettingsView: View {
     @AppStorage("notificationsEnabled") private var notificationsEnabled = true
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject var authViewModel: AuthViewModel
+    @State private var showingSignOutAlert = false
     
     var body: some View {
         NavigationView {
@@ -831,12 +832,11 @@ struct SettingsView: View {
                 // Logout Section
                 Section {
                     Button(role: .destructive, action: {
-                        authViewModel.signOut()
-                        presentationMode.wrappedValue.dismiss() // Dismiss settings view after logout
+                        showingSignOutAlert = true
                     }) {
                         HStack {
                             Spacer()
-                            Text("Log Out")
+                            Text("Sign Out")
                             Spacer()
                         }
                     }
@@ -847,6 +847,15 @@ struct SettingsView: View {
                 presentationMode.wrappedValue.dismiss()
             })
             .preferredColorScheme(isDarkMode ? .dark : .light)
+            .alert("Sign Out", isPresented: $showingSignOutAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Sign Out", role: .destructive) {
+                    authViewModel.signOut()
+                    presentationMode.wrappedValue.dismiss()
+                }
+            } message: {
+                Text("Are you sure you want to sign out?")
+            }
         }
     }
 }

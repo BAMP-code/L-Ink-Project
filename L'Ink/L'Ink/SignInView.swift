@@ -6,6 +6,9 @@ struct SignInView: View {
     @State private var password = ""
     @State private var showingSignUp = false
     @State private var isPasswordVisible = false
+    @State private var showingForgotPasswordAlert = false
+    @State private var showingResetConfirmation = false
+    @State private var resetPasswordMessage = ""
     
     var body: some View {
         VStack(spacing: 20) {
@@ -45,6 +48,17 @@ struct SignInView: View {
                     }
                     .padding(.trailing, 8)
                 }
+                
+                // Forgot Password Button
+                Button(action: {
+                    showingForgotPasswordAlert = true
+                }) {
+                    Text("Forgot Password?")
+                        .foregroundColor(.blue)
+                        .font(.footnote)
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.horizontal)
             }
             .padding(.horizontal)
             
@@ -73,6 +87,29 @@ struct SignInView: View {
         .padding()
         .sheet(isPresented: $showingSignUp) {
             SignUpView()
+        }
+        .alert("Reset Password", isPresented: $showingForgotPasswordAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Reset") {
+                if !email.isEmpty {
+                    authViewModel.resetPassword(email: email) { success, message in
+                        resetPasswordMessage = success ? 
+                            "Password reset email has been sent to \(email)" :
+                            message ?? "An error occurred"
+                        showingResetConfirmation = true
+                    }
+                } else {
+                    resetPasswordMessage = "Please enter your email address first"
+                    showingResetConfirmation = true
+                }
+            }
+        } message: {
+            Text("Would you like to reset your password? A reset link will be sent to your email address.")
+        }
+        .alert("Password Reset", isPresented: $showingResetConfirmation) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(resetPasswordMessage)
         }
     }
 }

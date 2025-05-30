@@ -139,7 +139,7 @@ class FeedViewModel: ObservableObject {
         }
     }
     
-    private func fetchNotebooks() {
+    func fetchNotebooks() {
         db.collection("notebooks")
             .whereField("isPublic", isEqualTo: true)
             .addSnapshotListener { [weak self] snapshot, error in
@@ -947,8 +947,8 @@ struct NotebookFeedView: View {
     
     private func refreshData() async {
         isRefreshing = true
-        viewModel.loadMockData()
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        viewModel.fetchNotebooks()
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // Add a small delay for better UX
         isRefreshing = false
     }
 }

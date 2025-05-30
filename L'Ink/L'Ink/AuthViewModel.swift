@@ -83,7 +83,45 @@ class AuthViewModel: ObservableObject {
         }
     }
     
+    private func fetchUser(uid: String) {
+        db.collection("users").document(uid).getDocument { [weak self] snapshot, error in
+            guard let self = self else { return }
+            if let data = snapshot?.data(),
+               let user = AppUser.fromDictionary(data) {
+                DispatchQueue.main.async {
+                    self.currentUser = user
+                    self.isAuthenticated = true
+                    print("✅ User data loaded successfully")
+                    print("📸 Profile URL: \(user.profileImageURL ?? "none")")
+                    print("🖼️ Header URL: \(user.headerImageURL ?? "none")")
+                    
+                    // Load images immediately after user data is fetched
+                    self.loadImages()
+                }
+            } else {
+                print("❌ Error fetching user: \(error?.localizedDescription ?? "No data")")
+                if let error = error {
+                    print("🔍 Detailed error: \(error)")
+                }
+            }
+        }
+    }
+    
+    private func checkEmailExists(_ email: String) async throws -> Bool {
+        let methods = try await Auth.auth().fetchSignInMethods(forEmail: email)
+        return !methods.isEmpty
+    }
+    
     func signUp(username: String, email: String, password: String) async throws {
+        // Check if email already exists
+        if try await checkEmailExists(email) {
+            throw NSError(
+                domain: "AuthError",
+                code: 1001,
+                userInfo: [NSLocalizedDescriptionKey: "This email is already registered. Please use a different email or try signing in."]
+            )
+        }
+        
         let authResult = try await Auth.auth().createUser(withEmail: email, password: password)
         let uid = authResult.user.uid
         let newUser = AppUser(
@@ -146,30 +184,6 @@ class AuthViewModel: ObservableObject {
         try await db.collection("users").document(user.id).setData(user.dictionary)
         await MainActor.run {
             self.currentUser = user
-        }
-    }
-    
-    private func fetchUser(uid: String) {
-        db.collection("users").document(uid).getDocument { [weak self] snapshot, error in
-            guard let self = self else { return }
-            if let data = snapshot?.data(),
-               let user = AppUser.fromDictionary(data) {
-                DispatchQueue.main.async {
-                    self.currentUser = user
-                    self.isAuthenticated = true
-                    print("✅ User data loaded successfully")
-                    print("📸 Profile URL: \(user.profileImageURL ?? "none")")
-                    print("🖼️ Header URL: \(user.headerImageURL ?? "none")")
-                    
-                    // Load images immediately after user data is fetched
-                    self.loadImages()
-                }
-            } else {
-                print("❌ Error fetching user: \(error?.localizedDescription ?? "No data")")
-                if let error = error {
-                    print("🔍 Detailed error: \(error)")
-                }
-            }
         }
     }
     

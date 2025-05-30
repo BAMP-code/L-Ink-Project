@@ -62,6 +62,15 @@ struct SignUpView: View {
             return
         }
         
-        authViewModel.signUp(email: email, password: password, username: username)
+        Task {
+            do {
+                try await authViewModel.signUp(email: email, password: password, username: username)
+            } catch {
+                await MainActor.run {
+                    alertMessage = error.localizedDescription
+                    showingAlert = true
+                }
+            }
+        }
     }
 } 

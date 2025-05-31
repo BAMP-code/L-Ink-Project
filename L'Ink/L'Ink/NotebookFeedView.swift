@@ -786,29 +786,30 @@ struct NotebookFeedView: View {
     var body: some View {
         NavigationView {
             ZStack {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(viewModel.notebooks) { notebook in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(viewModel.notebooks) { notebook in
                             PublicNotebookView(notebook: notebook, viewModel: viewModel, selectedNotebook: $selectedNotebook)
-                            .padding(.bottom, 8)
+                                .padding(.bottom, 8)
+                                .id(notebook.firestoreId)
+                        }
                     }
-                }
                     .blur(radius: selectedNotebook != nil ? 10 : 0)
-            }
-            .refreshable {
-                await refreshData()
-            }
-            .navigationTitle("Explore")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Image("Logo")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 30, height: 30)
-                        .clipShape(Circle())
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                .refreshable {
+                    await refreshData()
+                }
+                .navigationTitle("Explore")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Image("Logo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 30, height: 30)
+                            .clipShape(Circle())
+                    }
+                    ToolbarItem(placement: .navigationBarTrailing) {
                         Button(action: {
                             showingShareSheet = true
                         }) {
@@ -980,7 +981,7 @@ struct NotebookFeedView: View {
     private func refreshData() async {
         isRefreshing = true
         viewModel.fetchNotebooks()
-        try? await Task.sleep(nanoseconds: 1_000_000_000) // Add a small delay for better UX
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
         isRefreshing = false
     }
 }

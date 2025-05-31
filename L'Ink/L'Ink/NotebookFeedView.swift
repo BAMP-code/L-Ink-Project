@@ -128,180 +128,185 @@ class FeedViewModel: ObservableObject {
     }
     
     func fetchNotebooks() {
+        // Remove the snapshot listener and use get() instead
         db.collection("notebooks")
             .whereField("isPublic", isEqualTo: true)
-            .addSnapshotListener { [weak self] snapshot, error in
+            .getDocuments { [weak self] snapshot, error in
                 guard let documents = snapshot?.documents else {
                     print("Error fetching notebooks: \(error?.localizedDescription ?? "Unknown error")")
                     return
                 }
                 
-                self?.notebooks = documents.compactMap { document in
-                    let data = document.data()
-                    
-                    // Create notebook from Firestore data
-                    let notebook = Notebook(
-                        id: document.documentID,
-                        title: data["title"] as? String ?? "",
-                        description: data["description"] as? String,
-                        ownerId: data["ownerId"] as? String ?? "",
-                        isPublic: data["isPublic"] as? Bool ?? false,
-                        isPinned: data["isPinned"] as? Bool ?? false,
-                        isFavorite: data["isFavorite"] as? Bool ?? false,
-                        createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
-                        updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date(),
-                        pages: [], // We'll populate this below
-                        lastViewedPageIndex: data["lastViewedPageIndex"] as? Int ?? 0,
-                        coverImage: data["coverImage"] as? String ?? "Blue"
-                    )
-                    
-                    // Extract and convert pages array
-                    let pagesData = data["pages"] as? [[String: Any]] ?? []
-                    let pages = pagesData.compactMap { pageData -> Page? in
-                        guard let id = pageData["id"] as? String,
-                              let content = pageData["content"] as? String,
-                              let typeString = pageData["type"] as? String,
-                              let type = PageType(rawValue: typeString),
-                              let order = pageData["order"] as? Int,
-                              let createdAt = (pageData["createdAt"] as? Timestamp)?.dateValue(),
-                              let updatedAt = (pageData["updatedAt"] as? Timestamp)?.dateValue()
-                        else {
-                            return nil
-                        }
-                        
-                        // Decode canvas elements
-                        let drawingData = pageData["drawingData"] as? Data
-                        
-                        let textBoxes = (pageData["textBoxes"] as? [[String: Any]])?.compactMap { boxDict -> CanvasTextBoxModel? in
-                            guard let idString = boxDict["id"] as? String,
-                                  let id = UUID(uuidString: idString),
-                                  let text = boxDict["text"] as? String,
-                                  let positionDict = boxDict["position"] as? [String: CGFloat],
-                                  let x = positionDict["x"],
-                                  let y = positionDict["y"] else {
-                                return nil
-                            }
-                            
-                            // Get size information
-                            var size: CGSizeCodable? = nil
-                            if let sizeDict = boxDict["size"] as? [String: CGFloat],
-                               let width = sizeDict["width"],
-                               let height = sizeDict["height"] {
-                                size = CGSizeCodable(CGSize(width: width, height: height))
-                            }
-                            
-                            return CanvasTextBoxModel(
-                                id: id,
-                                text: text,
-                                position: CGPointCodable(CGPoint(x: x, y: y)),
-                                size: size
-                            )
-                        }
-                        
-                        let images = (pageData["images"] as? [[String: Any]])?.compactMap { imgDict -> CanvasImageModel? in
-                            guard let idString = imgDict["id"] as? String,
-                                  let id = UUID(uuidString: idString),
-                                  let imageUrl = imgDict["imageUrl"] as? String,
-                                  let positionDict = imgDict["position"] as? [String: CGFloat],
-                                  let x = positionDict["x"],
-                                  let y = positionDict["y"] else {
-                                return nil
-                            }
-                            
-                            // Get size information
-                            var size: CGSizeCodable? = nil
-                            if let sizeDict = imgDict["size"] as? [String: CGFloat],
-                               let width = sizeDict["width"],
-                               let height = sizeDict["height"] {
-                                size = CGSizeCodable(CGSize(width: width, height: height))
-                            }
-                            
-                            return CanvasImageModel(
-                                id: id,
-                                imageData: nil,
-                                imageUrl: imageUrl,
-                                position: CGPointCodable(CGPoint(x: x, y: y)),
-                                size: size
-                            )
-                        }
-                        
-                        return Page(
-                            id: id,
-                            content: content,
-                            type: type,
-                            createdAt: createdAt,
-                            updatedAt: updatedAt,
-                            order: order,
-                            drawingData: drawingData,
-                            textBoxes: textBoxes,
-                            images: images
-                        )
-                    }
-                    
-                    // Sort pages by order
-                    let sortedPages = pages.sorted { $0.order < $1.order }
-                    
-                    // Extract likes array
-                    let likes = data["likes"] as? [String] ?? []
-                    
-                    // Extract and convert comments
-                    let commentsData = data["comments"] as? [[String: Any]] ?? []
-                    let comments = commentsData.compactMap { commentData -> NotebookComment? in
-                        guard let username = commentData["username"] as? String,
-                              let text = commentData["text"] as? String,
-                              let timestamp = (commentData["timestamp"] as? Timestamp)?.dateValue() else {
-                            return nil
-                        }
-                        return NotebookComment(username: username, text: text, timestamp: timestamp)
-                    }
-                    
-                    // Extract view count and time spent
-                    let viewCount = data["viewCount"] as? Int ?? 0
-                    let timeSpentSeconds = data["timeSpentSeconds"] as? Int ?? 0
-                    
-                    let ownerId = data["ownerId"] as? String ?? ""
-                    
-                    // Create the PublicNotebook with the notebook we just created
-                    var publicNotebook = PublicNotebook(
-                        firestoreId: document.documentID,
-                        notebook: notebook,
-                        author: ownerId,
-                        authorImage: self?.userProfileImages[ownerId] ?? "person.circle.fill",
-                        likes: likes.count,
-                        comments: comments,
-                        isLiked: self?.likedNotebooks.contains(document.documentID) ?? false,
-                        isSaved: false,
-                        feedDescription: data["feedDescription"] as? String ?? "",
-                        viewCount: viewCount,
-                        timeSpentSeconds: timeSpentSeconds
-                    )
-                    
-                    // Update the notebook's pages
-                    publicNotebook.notebook.pages = sortedPages
-                    
-                    // Asynchronously fetch the author's name
-                    self?.db.collection("users").document(ownerId).getDocument { [weak self] userSnapshot, userError in
-                        guard let self = self, let userData = userSnapshot?.data() else {
-                            print("❌ Error fetching user data for ID \(ownerId): \(userError?.localizedDescription ?? "Unknown error")")
-                            return
-                        }
-                        
-                        if let username = userData["username"] as? String {
-                            // Update the notebook object in the published array on the main thread
-                            DispatchQueue.main.async {
-                                if let index = self.notebooks.firstIndex(where: { $0.firestoreId == publicNotebook.firestoreId }) {
-                                    self.notebooks[index].author = username
-                                }
-                            }
-                        }
-                    }
-                    
-                    return publicNotebook
+                self?.processNotebookDocuments(documents)
+            }
+    }
+    
+    private func processNotebookDocuments(_ documents: [QueryDocumentSnapshot]) {
+        self.notebooks = documents.compactMap { document in
+            let data = document.data()
+            
+            // Create notebook from Firestore data
+            let notebook = Notebook(
+                id: document.documentID,
+                title: data["title"] as? String ?? "",
+                description: data["description"] as? String,
+                ownerId: data["ownerId"] as? String ?? "",
+                isPublic: data["isPublic"] as? Bool ?? false,
+                isPinned: data["isPinned"] as? Bool ?? false,
+                isFavorite: data["isFavorite"] as? Bool ?? false,
+                createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
+                updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date(),
+                pages: [], // We'll populate this below
+                lastViewedPageIndex: data["lastViewedPageIndex"] as? Int ?? 0,
+                coverImage: data["coverImage"] as? String ?? "Blue"
+            )
+            
+            // Extract and convert pages array
+            let pagesData = data["pages"] as? [[String: Any]] ?? []
+            let pages = pagesData.compactMap { pageData -> Page? in
+                guard let id = pageData["id"] as? String,
+                      let content = pageData["content"] as? String,
+                      let typeString = pageData["type"] as? String,
+                      let type = PageType(rawValue: typeString),
+                      let order = pageData["order"] as? Int,
+                      let createdAt = (pageData["createdAt"] as? Timestamp)?.dateValue(),
+                      let updatedAt = (pageData["updatedAt"] as? Timestamp)?.dateValue()
+                else {
+                    return nil
                 }
                 
-                // Calculate ranking scores and sort
-                self?.calculateRankingScores()
+                // Decode canvas elements
+                let drawingData = pageData["drawingData"] as? Data
+                
+                let textBoxes = (pageData["textBoxes"] as? [[String: Any]])?.compactMap { boxDict -> CanvasTextBoxModel? in
+                    guard let idString = boxDict["id"] as? String,
+                          let id = UUID(uuidString: idString),
+                          let text = boxDict["text"] as? String,
+                          let positionDict = boxDict["position"] as? [String: CGFloat],
+                          let x = positionDict["x"],
+                          let y = positionDict["y"] else {
+                        return nil
+                    }
+                    
+                    // Get size information
+                    var size: CGSizeCodable? = nil
+                    if let sizeDict = boxDict["size"] as? [String: CGFloat],
+                       let width = sizeDict["width"],
+                       let height = sizeDict["height"] {
+                        size = CGSizeCodable(CGSize(width: width, height: height))
+                    }
+                    
+                    return CanvasTextBoxModel(
+                        id: id,
+                        text: text,
+                        position: CGPointCodable(CGPoint(x: x, y: y)),
+                        size: size
+                    )
+                }
+                
+                let images = (pageData["images"] as? [[String: Any]])?.compactMap { imgDict -> CanvasImageModel? in
+                    guard let idString = imgDict["id"] as? String,
+                          let id = UUID(uuidString: idString),
+                          let imageUrl = imgDict["imageUrl"] as? String,
+                          let positionDict = imgDict["position"] as? [String: CGFloat],
+                          let x = positionDict["x"],
+                          let y = positionDict["y"] else {
+                        return nil
+                    }
+                    
+                    // Get size information
+                    var size: CGSizeCodable? = nil
+                    if let sizeDict = imgDict["size"] as? [String: CGFloat],
+                       let width = sizeDict["width"],
+                       let height = sizeDict["height"] {
+                        size = CGSizeCodable(CGSize(width: width, height: height))
+                    }
+                    
+                    return CanvasImageModel(
+                        id: id,
+                        imageData: nil,
+                        imageUrl: imageUrl,
+                        position: CGPointCodable(CGPoint(x: x, y: y)),
+                        size: size
+                    )
+                }
+                
+                return Page(
+                    id: id,
+                    content: content,
+                    type: type,
+                    createdAt: createdAt,
+                    updatedAt: updatedAt,
+                    order: order,
+                    drawingData: drawingData,
+                    textBoxes: textBoxes,
+                    images: images
+                )
             }
+            
+            // Sort pages by order
+            let sortedPages = pages.sorted { $0.order < $1.order }
+            
+            // Extract likes array
+            let likes = data["likes"] as? [String] ?? []
+            
+            // Extract and convert comments
+            let commentsData = data["comments"] as? [[String: Any]] ?? []
+            let comments = commentsData.compactMap { commentData -> NotebookComment? in
+                guard let username = commentData["username"] as? String,
+                      let text = commentData["text"] as? String,
+                      let timestamp = (commentData["timestamp"] as? Timestamp)?.dateValue() else {
+                    return nil
+                }
+                return NotebookComment(username: username, text: text, timestamp: timestamp)
+            }
+            
+            // Extract view count and time spent
+            let viewCount = data["viewCount"] as? Int ?? 0
+            let timeSpentSeconds = data["timeSpentSeconds"] as? Int ?? 0
+            
+            let ownerId = data["ownerId"] as? String ?? ""
+            
+            // Create the PublicNotebook with the notebook we just created
+            var publicNotebook = PublicNotebook(
+                firestoreId: document.documentID,
+                notebook: notebook,
+                author: ownerId,
+                authorImage: self.userProfileImages[ownerId] ?? "person.circle.fill",
+                likes: likes.count,
+                comments: comments,
+                isLiked: self.likedNotebooks.contains(document.documentID) ?? false,
+                isSaved: false,
+                feedDescription: data["feedDescription"] as? String ?? "",
+                viewCount: viewCount,
+                timeSpentSeconds: timeSpentSeconds
+            )
+            
+            // Update the notebook's pages
+            publicNotebook.notebook.pages = sortedPages
+            
+            // Asynchronously fetch the author's name
+            self.db.collection("users").document(ownerId).getDocument { [weak self] userSnapshot, userError in
+                guard let self = self, let userData = userSnapshot?.data() else {
+                    print("❌ Error fetching user data for ID \(ownerId): \(userError?.localizedDescription ?? "Unknown error")")
+                    return
+                }
+                
+                if let username = userData["username"] as? String {
+                    // Update the notebook object in the published array on the main thread
+                    DispatchQueue.main.async {
+                        if let index = self.notebooks.firstIndex(where: { $0.firestoreId == publicNotebook.firestoreId }) {
+                            self.notebooks[index].author = username
+                        }
+                    }
+                }
+            }
+            
+            return publicNotebook
+        }
+        
+        // Calculate ranking scores and sort only on initial load or manual refresh
+        calculateRankingScores()
     }
     
     // MARK: - Ranking Calculations
@@ -533,11 +538,10 @@ class FeedViewModel: ObservableObject {
         }
     }
     
-    // Override existing addComment to track interaction
+    // Modify addComment to use the new local update function
     func addComment(_ comment: String, to notebook: PublicNotebook) {
         guard let index = notebooks.firstIndex(where: { $0.firestoreId == notebook.firestoreId }) else { return }
         
-        // First fetch the user's data to get the username
         let userRef = db.collection("users").document(currentUserId)
         userRef.getDocument { [weak self] snapshot, error in
             guard let self = self,
@@ -548,18 +552,20 @@ class FeedViewModel: ObservableObject {
             }
             
             let newComment = NotebookComment(
-                username: username, // Using the actual username from Firestore
+                username: username,
                 text: comment,
                 timestamp: Date()
             )
             
-            // Update local state
-            self.notebooks[index].comments.append(newComment)
+            // Update local state without re-sorting
+            self.updateNotebookLocally(notebookId: notebook.firestoreId) { notebook in
+                notebook.comments.append(newComment)
+            }
             
-            // Update Firestore directly using the document ID
+            // Update Firestore
             let docRef = self.db.collection("notebooks").document(notebook.firestoreId)
             let commentData: [String: Any] = [
-                "username": username, // Using the actual username
+                "username": username,
                 "text": newComment.text,
                 "timestamp": Timestamp(date: newComment.timestamp)
             ]
@@ -571,6 +577,15 @@ class FeedViewModel: ObservableObject {
                     print("Error adding comment: \(error.localizedDescription)")
                 }
             }
+        }
+    }
+    
+    // Add a new function for updating a single notebook without re-sorting
+    private func updateNotebookLocally(notebookId: String, updateAction: (inout PublicNotebook) -> Void) {
+        if let index = notebooks.firstIndex(where: { $0.firestoreId == notebookId }) {
+            var updatedNotebook = notebooks[index]
+            updateAction(&updatedNotebook)
+            notebooks[index] = updatedNotebook
         }
     }
     
@@ -771,6 +786,11 @@ class FeedViewModel: ObservableObject {
                 self.notebooks.removeAll { $0.firestoreId == notebook.firestoreId }
             }
         }
+    }
+    
+    // Add a function for manual refresh
+    func refreshNotebooks() {
+        fetchNotebooks()
     }
 }
 

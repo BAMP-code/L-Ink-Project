@@ -1354,10 +1354,6 @@ struct PublicNotebookView: View {
                 }
                 
                 Spacer()
-                
-                Button(action: {}) {
-                    Image(systemName: "ellipsis")
-                }
             }
             .padding(.horizontal)
             

@@ -338,13 +338,14 @@ struct ProfileView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @StateObject private var notebookViewModel = NotebookViewModel()
     @StateObject private var imageViewModel = ProfileImageViewModel(authViewModel: AuthViewModel())
-    @State private var showingEditProfile = false
     @State private var showingSettings = false
     @State private var selectedHeaderItem: PhotosPickerItem?
     @State private var selectedProfileItem: PhotosPickerItem?
     @State private var isUploading = false
     @State private var isEditingBio = false
     @State private var tempBio: String = ""
+    @State private var isEditingUsername = false
+    @State private var tempUsername: String = ""
     @State private var totalPagesCreated: Int = 0
     @State private var publicNotebooks: [PublicNotebook] = []
     
@@ -390,9 +391,39 @@ struct ProfileView: View {
                     
                     // Profile Info
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(authViewModel.currentUser?.username ?? "Username")
-                            .font(.title2)
-                            .fontWeight(.bold)
+                        if isEditingUsername {
+                            TextField("Username", text: $tempUsername)
+                                .textFieldStyle(.roundedBorder)
+                                .onSubmit {
+                                    saveUsername()
+                                }
+                            
+                            HStack {
+                                Button("Save") {
+                                    saveUsername()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                
+                                Button("Cancel") {
+                                    isEditingUsername = false
+                                    tempUsername = authViewModel.currentUser?.username ?? ""
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        } else {
+                            HStack {
+                                Text(authViewModel.currentUser?.username ?? "Username")
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                Button(action: {
+                                    tempUsername = authViewModel.currentUser?.username ?? ""
+                                    isEditingUsername = true
+                                }) {
+                                    Image(systemName: "pencil.circle")
+                                        .foregroundColor(.gray)
+                                }
+                            }
+                        }
                         
                         if isEditingBio {
                             TextField("Write something about yourself...", text: $tempBio, axis: .vertical)
@@ -415,13 +446,18 @@ struct ProfileView: View {
                                 .buttonStyle(.bordered)
                             }
                         } else {
-                            Text(authViewModel.currentUser?.bio ?? "No bio yet")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .onTapGesture {
+                            HStack {
+                                Text(authViewModel.currentUser?.bio ?? "No bio yet")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Button(action: {
                                     tempBio = authViewModel.currentUser?.bio ?? ""
                                     isEditingBio = true
+                                }) {
+                                    Image(systemName: "pencil.circle")
+                                        .foregroundColor(.gray)
                                 }
+                            }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -429,17 +465,9 @@ struct ProfileView: View {
                     
                     // Action Buttons
                     HStack(spacing: 10) {
-                        Button(action: { showingEditProfile = true }) {
-                                Text("Edit Profile")
-                                .font(.system(size: 14, weight: .semibold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                            .background(Color.gray.opacity(0.1))
-                                .cornerRadius(8)
-                        }
                         Button(action: { showingSettings = true }) {
                                 Image(systemName: "gear")
-                                .frame(width: 30)
+                                .frame(maxWidth: .infinity)
                                 .padding(.vertical, 8)
                             .background(Color.gray.opacity(0.1))
                                 .cornerRadius(8)
@@ -483,9 +511,6 @@ struct ProfileView: View {
             }
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented: $showingEditProfile) {
-                EditProfileView()
-            }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
             }
@@ -689,6 +714,21 @@ struct ProfileView: View {
         }
     }
     
+    private func saveUsername() {
+        guard var user = authViewModel.currentUser else { return }
+        user.username = tempUsername
+        user.updatedAt = Date()
+        
+        Task {
+            do {
+                try await authViewModel.updateUser(user)
+                isEditingUsername = false
+            } catch {
+                print("Error updating username: \(error)")
+            }
+        }
+    }
+    
     private func saveBio() {
         guard var user = authViewModel.currentUser else { return }
         user.bio = tempBio
@@ -737,54 +777,6 @@ struct NotebookCardView: View {
         .padding(4)
         .background(Color.gray.opacity(0.1))
         .cornerRadius(10)
-    }
-}
-
-struct EditProfileView: View {
-    @Environment(\.presentationMode) var presentationMode
-    @EnvironmentObject var authViewModel: AuthViewModel
-    @State private var username: String = ""
-    @State private var bio: String = ""
-    
-    var body: some View {
-        NavigationView {
-            Form {
-                Section(header: Text("Profile Information")) {
-                    TextField("Username", text: $username)
-                    TextField("Bio", text: $bio)
-                }
-                
-                Section(header: Text("Account")) {
-                    Button(action: {
-                        // Add change password functionality
-                    }) {
-                        Text("Change Password")
-                    }
-                    
-                    Button(action: {
-                        // Add delete account functionality
-                    }) {
-                        Text("Delete Account")
-                            .foregroundColor(.red)
-                    }
-                }
-            }
-            .navigationTitle("Edit Profile")
-            .navigationBarItems(
-                leading: Button("Cancel") {
-                    presentationMode.wrappedValue.dismiss()
-                },
-                trailing: Button("Save") {
-                    // Save profile changes
-                    presentationMode.wrappedValue.dismiss()
-                }
-            )
-            .onAppear {
-                // Initialize with current user data
-                username = authViewModel.currentUser?.username ?? ""
-                bio = "" // Add bio to your user model if needed
-            }
-        }
     }
 }
 
